@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { EventRecord, EventType, BarType, FoodSource, FoodServiceType } from '../types';
 import { DEFAULT_EVENT } from '../constants';
+import { generateSafeId } from '../services/utils';
 
 interface PublicEventFormProps {
   onSubmit: (event: EventRecord) => void;
@@ -10,7 +11,7 @@ interface PublicEventFormProps {
 const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
   const [formData, setFormData] = useState<EventRecord>({
     ...DEFAULT_EVENT,
-    id: crypto.randomUUID(),
+    id: generateSafeId(),
     firstName: '',
     lastName: '',
     email: '',
@@ -24,6 +25,7 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
   } as EventRecord);
 
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
@@ -38,10 +40,17 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
     setFormData(prev => ({ ...prev, [name]: val }));
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData);
-    setSubmitted(true);
+    setIsSubmitting(true);
+    try {
+      await onSubmit(formData);
+      setSubmitted(true);
+    } catch (err) {
+      alert("Submission failed. Please check your connection and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -68,7 +77,6 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
       <form onSubmit={handleFormSubmit} className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
         <div className="p-8 md:p-12 space-y-12">
           
-          {/* Section 1: Contact */}
           <section className="space-y-6">
             <h3 className="text-[11px] font-black text-amber-700 uppercase tracking-[0.2em] border-b border-amber-100 pb-3 flex items-center gap-2">
               <span className="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center text-[10px]">01</span>
@@ -96,7 +104,6 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
             </div>
           </section>
 
-          {/* Section 2: Event Details */}
           <section className="space-y-6">
             <h3 className="text-[11px] font-black text-amber-700 uppercase tracking-[0.2em] border-b border-amber-100 pb-3 flex items-center gap-2">
               <span className="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center text-[10px]">02</span>
@@ -130,7 +137,6 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
             </div>
           </section>
 
-          {/* Section 3: Service & Logistics */}
           <section className="space-y-8">
             <h3 className="text-[11px] font-black text-amber-700 uppercase tracking-[0.2em] border-b border-amber-100 pb-3 flex items-center gap-2">
               <span className="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center text-[10px]">03</span>
@@ -150,23 +156,6 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
             </div>
 
             <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 space-y-6">
-               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <span className="text-xs font-black text-gray-900 uppercase">Beer & Wine Options</span>
-                  <p className="text-[10px] text-gray-500 font-medium">Would you like us to provide beer and wine service or handle uncorking for your own?</p>
-                </div>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer bg-white px-4 py-2 rounded-lg border border-gray-200">
-                    <input type="radio" name="beerWineOffered" checked={formData.beerWineOffered === true} onChange={() => setFormData(p => ({...p, beerWineOffered: true}))} />
-                    <span className="text-[10px] font-bold text-gray-700 uppercase">Full Provisioning</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer bg-white px-4 py-2 rounded-lg border border-gray-200">
-                    <input type="radio" name="beerWineOffered" checked={formData.beerWineOffered === false} onChange={() => setFormData(p => ({...p, beerWineOffered: false}))} />
-                    <span className="text-[10px] font-bold text-gray-700 uppercase">Uncorking Fee</span>
-                  </label>
-                </div>
-              </div>
-
               <div className="border-t border-gray-200 pt-6 space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -175,7 +164,6 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
                     </div>
                     <div>
                       <span className="text-xs font-black text-gray-900 uppercase">Include Food Service</span>
-                      <p className="text-[10px] text-gray-500 font-medium">Toggle if you require catering or food facilities.</p>
                     </div>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
@@ -183,64 +171,29 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
                   </label>
                 </div>
-
-                {formData.hasFood && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-white rounded-xl border-2 border-amber-100 animate-in fade-in slide-in-from-top-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Provisioning Source</label>
-                      <select name="foodSource" value={formData.foodSource} onChange={handleChange} className="w-full bg-gray-50 border-2 border-gray-100 rounded-lg p-2.5 font-bold outline-none text-xs">
-                        <option value="">Choose source...</option>
-                        {Object.values(FoodSource).map(fs => <option key={fs} value={fs}>{fs}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Service Style</label>
-                      <select name="foodServiceType" value={formData.foodServiceType} onChange={handleChange} className="w-full bg-gray-50 border-2 border-gray-100 rounded-lg p-2.5 font-bold outline-none text-xs">
-                        <option value="">Choose style...</option>
-                        {Object.values(FoodServiceType).map(st => <option key={st} value={st}>{st}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-gray-200 pt-6 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center text-blue-700">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
-                  </div>
-                  <div>
-                    <span className="text-xs font-black text-gray-900 uppercase">Valet & Premium Parking</span>
-                    <p className="text-[10px] text-gray-500 font-medium">Reserve an additional 20 spots for your guests ($500 flat fee).</p>
-                  </div>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" name="addParking" checked={formData.addParking} onChange={handleChange} className="sr-only peer" />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
-                </label>
               </div>
             </div>
           </section>
 
-          {/* Section 4: Special Requests */}
           <section className="space-y-6">
             <h3 className="text-[11px] font-black text-amber-700 uppercase tracking-[0.2em] border-b border-amber-100 pb-3 flex items-center gap-2">
               <span className="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center text-[10px]">04</span>
               Directives
             </h3>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Any specific requests? (Music, Lighting, A/V, etc.)</label>
-              <textarea name="notes" value={formData.notes} onChange={handleChange} rows={4} className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl p-4 focus:border-amber-500 focus:bg-white transition-all font-medium outline-none text-sm" placeholder="Tell us about any specific details we should know to make your event perfect..." />
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Any specific requests?</label>
+              <textarea name="notes" value={formData.notes} onChange={handleChange} rows={4} className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl p-4 focus:border-amber-500 focus:bg-white transition-all font-medium outline-none text-sm" placeholder="Tell us more details..." />
             </div>
           </section>
 
           <div className="pt-6">
-            <button type="submit" className="w-full bg-[#1a1a1a] hover:bg-black text-amber-500 font-black uppercase tracking-[0.3em] py-5 rounded-2xl shadow-2xl transition-all active:scale-95 text-xs">
-              Submit Inquiry
+            <button 
+              type="submit" 
+              disabled={isSubmitting}
+              className="w-full bg-[#1a1a1a] hover:bg-black text-amber-500 font-black uppercase tracking-[0.3em] py-5 rounded-2xl shadow-2xl transition-all active:scale-95 text-xs disabled:opacity-50"
+            >
+              {isSubmitting ? 'Transmitting...' : 'Submit Inquiry'}
             </button>
-            <p className="text-center text-gray-400 text-[9px] uppercase font-bold mt-4 tracking-widest">
-              By submitting, you agree to our private events terms & conditions.
-            </p>
           </div>
         </div>
       </form>
