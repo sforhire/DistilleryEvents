@@ -2,8 +2,22 @@
 import { GoogleGenAI } from "@google/genai";
 import { EventRecord } from "../types";
 
+const getApiKey = (): string => {
+  try {
+    return (typeof process !== 'undefined' ? process.env.API_KEY : '') || '';
+  } catch {
+    return '';
+  }
+};
+
 export const generateFOHBriefing = async (event: EventRecord): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const apiKey = getApiKey();
+  
+  if (!apiKey) {
+    return "AI Briefing unavailable: API_KEY environment variable is not set. Please configure your Gemini key in Vercel.";
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   
   const foodDetails = event.hasFood 
     ? `FOOD SERVICE: ${event.foodSource} - ${event.foodServiceType} style.` 
@@ -51,6 +65,6 @@ export const generateFOHBriefing = async (event: EventRecord): Promise<string> =
     return response.text || "Unable to generate briefing at this time.";
   } catch (error) {
     console.error("Gemini Briefing Error:", error);
-    return "Error generating AI briefing. Please use manual notes.";
+    return "Error generating AI briefing. Please check your API key permissions or project status.";
   }
 };

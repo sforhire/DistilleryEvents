@@ -10,7 +10,7 @@ import PublicEventForm from './components/PublicEventForm';
 import EmbedModal from './components/EmbedModal';
 import AdminLogin from './components/AdminLogin';
 import { generateFOHBriefing } from './services/geminiService';
-import { supabase } from './services/supabaseClient';
+import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 
 const App: React.FC = () => {
   const isPublicView = new URLSearchParams(window.location.search).get('view') === 'public';
@@ -29,21 +29,42 @@ const App: React.FC = () => {
 
   // Auth listener
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
+    if (!isSupabaseConfigured || !supabase?.auth) {
+      setLoading(false);
+      return;
+    }
+
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setSession(session);
+      } catch (err) {
+        console.error("Auth init error:", err);
+      }
+    };
+
+    initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
 
-    return () => subscription.unsubscribe();
+    return () => subscription?.unsubscribe();
   }, []);
 
-  // Fetch events from Supabase
+  // Fetch events
   useEffect(() => {
     const fetchEvents = async () => {
-      if (!session && !isPublicView) return;
+      if (!isSupabaseConfigured || !supabase) {
+        setEvents(MOCK_EVENTS);
+        setLoading(false);
+        return;
+      }
+
+      if (!session && !isPublicView) {
+        setLoading(false);
+        return;
+      }
       
       try {
         const { data, error } = await supabase
@@ -55,7 +76,7 @@ const App: React.FC = () => {
         setEvents(data || []);
       } catch (err) {
         console.error('Error fetching events:', err);
-        if (!process.env.SUPABASE_URL) setEvents(MOCK_EVENTS);
+        setEvents(MOCK_EVENTS);
       } finally {
         setLoading(false);
       }
@@ -67,7 +88,7 @@ const App: React.FC = () => {
   const stats = useMemo(() => {
     return events.reduce((acc, curr) => ({
       totalEvents: acc.totalEvents + 1,
-      totalRevenue: acc.totalRevenue + curr.totalAmount,
+      totalRevenue: acc.totalRevenue + (curr.totalAmount || 0),
       newRequests: acc.newRequests + (curr.contacted ? 0 : 1),
       pendingDeposits: acc.pendingDeposits + (!curr.depositPaid || !curr.balancePaid ? 1 : 0)
     }), { totalEvents: 0, totalRevenue: 0, newRequests: 0, pendingDeposits: 0 });
@@ -84,6 +105,16 @@ const App: React.FC = () => {
   }, [events, activeFilter]);
 
   const handleSaveEvent = async (event: EventRecord) => {
+    if (!isSupabaseConfigured || !supabase) {
+      setEvents(prev => {
+        const exists = prev.find(e => e.id === event.id);
+        if (exists) return prev.map(e => e.id === event.id ? event : e);
+        return [...prev, event];
+      });
+      setShowForm(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('events')
@@ -91,7 +122,6 @@ const App: React.FC = () => {
         .select();
 
       if (error) throw error;
-
       if (editingEvent) {
         setEvents(prev => prev.map(e => e.id === event.id ? data[0] : e));
       } else {
@@ -99,24 +129,38 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error('Error saving event:', err);
-      alert('Failed to save to cloud.');
+      alert('Local save successful. Cloud sync failed - check connection.');
+      setEvents(prev => {
+        const exists = prev.find(e => e.id === event.id);
+        if (exists) return prev.map(e => e.id === event.id ? event : e);
+        return [...prev, event];
+      });
     }
     setShowForm(false);
     setEditingEvent(undefined);
   };
 
   const handlePublicSubmit = async (event: EventRecord) => {
+    if (!isSupabaseConfigured || !supabase) {
+      console.info("Demo Submission Recorded:", event);
+      return;
+    }
     try {
       const { error } = await supabase.from('events').insert(event);
       if (error) throw error;
     } catch (err) {
       console.error('Error submitting public inquiry:', err);
+      throw err; // Re-throw so form can handle UI error state if needed
     }
   };
 
   const handleDeleteEvent = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (confirm('Permanently remove this booking record?')) {
+      if (!isSupabaseConfigured || !supabase) {
+        setEvents(prev => prev.filter(e => e.id !== id));
+        return;
+      }
       try {
         const { error } = await supabase.from('events').delete().eq('id', id);
         if (error) throw error;
@@ -128,17 +172,24 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    if (isSupabaseConfigured && supabase?.auth) {
+      await supabase.auth.signOut();
+    }
+    setSession(null);
   };
 
   const format12hWindow = (startTime: string, duration: number) => {
     if (!startTime) return "TBD";
-    const [hours, minutes] = startTime.split(':').map(Number);
-    const start = new Date();
-    start.setHours(hours, minutes, 0, 0);
-    const end = new Date(start.getTime() + duration * 60 * 60 * 1000);
-    const fmt = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-    return `${fmt(start)} — ${fmt(end)}`;
+    try {
+      const [hours, minutes] = startTime.split(':').map(Number);
+      const start = new Date();
+      start.setHours(hours, minutes, 0, 0);
+      const end = new Date(start.getTime() + (duration || 0) * 60 * 60 * 1000);
+      const fmt = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      return `${fmt(start)} — ${fmt(end)}`;
+    } catch {
+      return startTime;
+    }
   };
 
   const handlePrint = async (e: React.MouseEvent, event: EventRecord) => {
@@ -151,19 +202,15 @@ const App: React.FC = () => {
       const briefing = await generateFOHBriefing(event);
       setAiBriefing(briefing);
       
+      // Delay to ensure the briefing is rendered before print dialog opens
       setTimeout(() => {
         window.print();
         setIsGeneratingBriefing(false);
-      }, 1200);
+      }, 1500);
     } catch (err) {
       console.error("Print Error:", err);
       setIsGeneratingBriefing(false);
     }
-  };
-
-  const openEditor = (event: EventRecord) => {
-    setEditingEvent(event);
-    setShowForm(true);
   };
 
   if (isPublicView) {
@@ -174,8 +221,8 @@ const App: React.FC = () => {
     );
   }
 
-  // If not public and not logged in, show login screen
-  if (!session && !isPublicView) {
+  // Admin login if keys are present but no session
+  if (isSupabaseConfigured && !session) {
     return <AdminLogin />;
   }
 
@@ -216,13 +263,15 @@ const App: React.FC = () => {
                 </svg>
                 New Booking
               </button>
-              <button
-                onClick={handleLogout}
-                className="p-2.5 text-gray-500 hover:text-white transition-colors"
-                title="Log Out"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-              </button>
+              {session && (
+                <button
+                  onClick={handleLogout}
+                  className="p-2.5 text-gray-500 hover:text-white transition-colors"
+                  title="Log Out"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                </button>
+              )}
             </div>
           </div>
         </header>
@@ -276,10 +325,13 @@ const App: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {filteredEvents.map(event => (
+                      {filteredEvents.length > 0 ? filteredEvents.map(event => (
                         <tr 
                           key={event.id} 
-                          onClick={() => openEditor(event)}
+                          onClick={() => {
+                            setEditingEvent(event);
+                            setShowForm(true);
+                          }}
                           className="group hover:bg-amber-50/10 transition-all cursor-pointer"
                         >
                           <td className="px-6 py-5">
@@ -292,12 +344,12 @@ const App: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-6 py-5">
-                            <div className="text-sm text-gray-900 font-bold">{new Date(event.dateRequested).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                            <div className="text-sm text-gray-900 font-bold">{event.dateRequested ? new Date(event.dateRequested).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBD'}</div>
                             <div className="text-[11px] text-amber-700 font-black uppercase tracking-tighter">{format12hWindow(event.time, event.duration)}</div>
                             <div className="text-[9px] text-gray-400 font-bold uppercase mt-0.5">{event.guests} Guests</div>
                           </td>
                           <td className="px-6 py-5">
-                            <div className="text-sm font-black text-gray-900 mb-1.5 tracking-tight">${event.totalAmount.toLocaleString()}</div>
+                            <div className="text-sm font-black text-gray-900 mb-1.5 tracking-tight">${(event.totalAmount || 0).toLocaleString()}</div>
                             <div className="flex flex-col gap-1">
                               <div className={`text-[9px] font-black px-1.5 py-0.5 rounded w-fit uppercase tracking-tighter border ${event.depositPaid ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
                                 Dep: {event.depositPaid ? 'PAID' : 'PENDING'}
@@ -325,7 +377,13 @@ const App: React.FC = () => {
                             </div>
                           </td>
                         </tr>
-                      ))}
+                      )) : (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-20 text-center">
+                            <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">No records found for this filter.</p>
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -337,17 +395,32 @@ const App: React.FC = () => {
         {showForm && <EventForm event={editingEvent} onSave={handleSaveEvent} onClose={() => setShowForm(false)} />}
         {showChart && <MonthlyRevenueChart events={events} onClose={() => setShowChart(false)} />}
         {showEmbedModal && <EmbedModal onClose={() => setShowEmbedModal(false)} />}
+
+        <footer className="max-w-7xl mx-auto px-4 py-6 border-t flex justify-between items-center opacity-70">
+           <div className="flex items-center gap-2">
+             <div className={`w-2.5 h-2.5 rounded-full ${isSupabaseConfigured ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse'}`} />
+             <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+               {isSupabaseConfigured ? 'Live Pipeline Active' : 'Offline Preview Mode'}
+             </span>
+           </div>
+           {!isSupabaseConfigured && (
+             <div className="bg-amber-50 px-3 py-1.5 rounded-md border border-amber-100 flex items-center gap-2">
+               <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest">Database keys missing from environment. Cloud Sync inactive.</span>
+             </div>
+           )}
+           <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">DistilleryEvents Ops • v1.3.0</p>
+        </footer>
       </div>
 
       {isGeneratingBriefing && (
-        <div className="fixed inset-0 bg-[#1a1a1a]/90 backdrop-blur-xl z-[100] flex items-center justify-center no-print">
+        <div className="fixed inset-0 bg-[#1a1a1a]/95 backdrop-blur-xl z-[100] flex items-center justify-center no-print">
           <div className="bg-white p-12 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm border border-amber-900/20 text-center">
             <div className="relative mb-8">
               <div className="w-20 h-20 border-8 border-amber-100 rounded-full"></div>
               <div className="w-20 h-20 border-8 border-amber-600 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
             </div>
             <p className="text-2xl font-black text-gray-900 tracking-tighter uppercase">Distilling Strategy...</p>
-            <p className="text-sm text-gray-500 mt-4 font-medium leading-relaxed uppercase tracking-tighter">Preparing FOH Intelligence & Service Directives.</p>
+            <p className="text-xs text-gray-500 mt-4 font-bold leading-relaxed uppercase tracking-widest">Synthesizing Logistics & Staff Directives</p>
           </div>
         </div>
       )}
