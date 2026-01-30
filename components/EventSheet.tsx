@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { EventRecord } from '../types';
 
@@ -8,15 +7,17 @@ interface EventSheetProps {
 }
 
 const format12hWindow = (startTime: string, duration: number) => {
-  const [hours, minutes] = startTime.split(':').map(Number);
-  const start = new Date();
-  start.setHours(hours, minutes, 0, 0);
-  
-  const end = new Date(start.getTime() + duration * 60 * 60 * 1000);
-  
-  const fmt = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  
-  return `${fmt(start)} — ${fmt(end)} (${duration}h)`;
+  if (!startTime || typeof startTime !== 'string' || !startTime.includes(':')) return "TBD";
+  try {
+    const [hours, minutes] = startTime.split(':').map(Number);
+    const start = new Date();
+    start.setHours(hours, minutes, 0, 0);
+    const end = new Date(start.getTime() + (Number(duration) || 0) * 60 * 60 * 1000);
+    const fmt = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    return `${fmt(start)} — ${fmt(end)} (${duration}h)`;
+  } catch (e) {
+    return startTime || "TBD";
+  }
 };
 
 const EventSheet: React.FC<EventSheetProps> = ({ event, aiBriefing }) => {
@@ -28,7 +29,7 @@ const EventSheet: React.FC<EventSheetProps> = ({ event, aiBriefing }) => {
           <p className="text-sm font-bold text-gray-500 uppercase tracking-widest mt-1">DistilleryEvents Professional</p>
         </div>
         <div className="text-right">
-          <p className="text-xl font-bold">{new Date(event.dateRequested).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+          <p className="text-xl font-bold">{event.dateRequested ? new Date(event.dateRequested).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'DATE TBD'}</p>
           <p className="text-gray-600 font-medium">{format12hWindow(event.time, event.duration)}</p>
         </div>
       </div>
@@ -47,7 +48,7 @@ const EventSheet: React.FC<EventSheetProps> = ({ event, aiBriefing }) => {
           <div className="space-y-1">
             <p className="text-sm"><strong>Event Type:</strong> {event.eventType}</p>
             <p className="text-sm"><strong>Manifest:</strong> {event.guests} Guests</p>
-            <p className="text-sm"><strong>Bar Service:</strong> {event.barType} ({event.beerWineOffered ? 'Svc Fee' : 'Uncork Fee'})</p>
+            <p className="text-sm"><strong>Bar Service:</strong> {event.barType}</p>
           </div>
         </section>
       </div>
@@ -63,13 +64,11 @@ const EventSheet: React.FC<EventSheetProps> = ({ event, aiBriefing }) => {
                 <p className="text-sm"><strong>Style:</strong> {event.foodServiceType}</p>
               </>
             )}
-            <p className="text-sm"><strong>Facility Usage:</strong> {event.hasTour ? 'TOUR' : ''} {event.hasTasting ? 'TASTING' : ''}</p>
           </div>
         </section>
         <section>
           <h2 className="text-xs font-black uppercase tracking-widest border-b-2 border-gray-100 mb-4 pb-1 text-gray-400">Logistics & Account</h2>
           <div className="space-y-1">
-            <p className="text-sm"><strong>Parking Upgrade:</strong> {event.addParking ? 'YES ($500)' : 'NO'}</p>
             <p className="text-sm"><strong>Deposit:</strong> {event.depositPaid ? '✓ SETTLED' : '⚠ OUTSTANDING'}</p>
             <p className="text-sm"><strong>Final Balance:</strong> {event.balancePaid ? '✓ SETTLED' : '⚠ OUTSTANDING'}</p>
           </div>

@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import { EventRecord } from './types';
 import { MOCK_EVENTS } from './constants';
 import EventForm from './components/EventForm';
@@ -12,7 +12,46 @@ import AdminLogin from './components/AdminLogin';
 import { generateFOHBriefing } from './services/geminiService';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 
-const App: React.FC = () => {
+// --- Error Boundary for Runtime Resilience ---
+// Fixed EBProps: making children optional to resolve usage errors (Property 'children' is missing)
+interface EBProps { children?: ReactNode; }
+interface EBState { hasError: boolean; error: Error | null; }
+
+// Fixed: Explicitly extending React.Component and ensuring state/props are correctly typed
+class ErrorBoundary extends React.Component<EBProps, EBState> {
+  constructor(props: EBProps) { 
+    super(props); 
+    this.state = { hasError: false, error: null }; 
+  }
+  
+  static getDerivedStateFromError(error: Error): EBState { 
+    return { hasError: true, error }; 
+  }
+  
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
+    console.error("App Crash:", error, errorInfo); 
+  }
+  
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#faf9f6] flex items-center justify-center p-8">
+          <div className="max-w-md w-full bg-white p-8 rounded-3xl shadow-2xl border border-red-100">
+            <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter mb-4">Component Crash</h1>
+            <p className="text-sm text-gray-500 mb-6 font-medium">The dashboard encountered a rendering error. This often happens if the database structure doesn't match the expected types.</p>
+            <div className="bg-red-50 p-4 rounded-xl text-xs font-mono text-red-700 mb-6 overflow-auto max-h-40">
+              {this.state.error?.message}
+            </div>
+            <button onClick={() => window.location.reload()} className="w-full bg-[#1a1a1a] text-amber-500 font-black uppercase tracking-widest py-4 rounded-xl">Reload Dashboard</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const AppContent: React.FC = () => {
   const isPublicView = new URLSearchParams(window.location.search).get('view') === 'public';
 
   const [session, setSession] = useState<any>(null);
@@ -26,10 +65,11 @@ const App: React.FC = () => {
   const [printingEvent, setPrintingEvent] = useState<EventRecord | null>(null);
   const [aiBriefing, setAiBriefing] = useState<string>('');
   const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Auth listener
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase?.auth) {
+    if (!isSupabaseConfigured) {
       setLoading(false);
       return;
     }
@@ -55,27 +95,40 @@ const App: React.FC = () => {
   // Fetch events
   useEffect(() => {
     const fetchEvents = async () => {
-      if (!isSupabaseConfigured || !supabase) {
+      if (!isSupabaseConfigured) {
         setEvents(MOCK_EVENTS);
         setLoading(false);
         return;
       }
 
+      // If we are in admin view but not logged in, wait for login
       if (!session && !isPublicView) {
         setLoading(false);
         return;
       }
       
       try {
+        setLoading(true);
         const { data, error } = await supabase
           .from('events')
           .select('*')
           .order('dateRequested', { ascending: true });
 
-        if (error) throw error;
-        setEvents(data || []);
-      } catch (err) {
+        if (error) {
+          // Check specifically for "table not found"
+          if (error.code === 'PGRST116' || error.message.includes('not found')) {
+            setDbError("Table 'events' does not exist in Supabase. Please run the setup SQL.");
+            setEvents(MOCK_EVENTS);
+          } else {
+            throw error;
+          }
+        } else {
+          setEvents(data || []);
+          setDbError(null);
+        }
+      } catch (err: any) {
         console.error('Error fetching events:', err);
+        setDbError(err.message || "Failed to fetch data.");
         setEvents(MOCK_EVENTS);
       } finally {
         setLoading(false);
@@ -86,26 +139,33 @@ const App: React.FC = () => {
   }, [session, isPublicView]);
 
   const stats = useMemo(() => {
+    if (!Array.isArray(events)) return { totalEvents: 0, totalRevenue: 0, newRequests: 0, pendingDeposits: 0 };
     return events.reduce((acc, curr) => ({
       totalEvents: acc.totalEvents + 1,
-      totalRevenue: acc.totalRevenue + (curr.totalAmount || 0),
+      totalRevenue: acc.totalRevenue + (Number(curr.totalAmount) || 0),
       newRequests: acc.newRequests + (curr.contacted ? 0 : 1),
       pendingDeposits: acc.pendingDeposits + (!curr.depositPaid || !curr.balancePaid ? 1 : 0)
     }), { totalEvents: 0, totalRevenue: 0, newRequests: 0, pendingDeposits: 0 });
   }, [events]);
 
   const filteredEvents = useMemo(() => {
+    if (!Array.isArray(events)) return [];
     let result = [...events];
     if (activeFilter === 'new') {
       result = result.filter(e => !e.contacted);
     } else if (activeFilter === 'pending_deposit') {
       result = result.filter(e => !e.depositPaid || !e.balancePaid);
     }
-    return result.sort((a, b) => new Date(a.dateRequested).getTime() - new Date(b.dateRequested).getTime());
+    
+    return result.sort((a, b) => {
+      const dateA = a.dateRequested ? new Date(a.dateRequested).getTime() : 0;
+      const dateB = b.dateRequested ? new Date(b.dateRequested).getTime() : 0;
+      return dateA - dateB;
+    });
   }, [events, activeFilter]);
 
   const handleSaveEvent = async (event: EventRecord) => {
-    if (!isSupabaseConfigured || !supabase) {
+    if (!isSupabaseConfigured) {
       setEvents(prev => {
         const exists = prev.find(e => e.id === event.id);
         if (exists) return prev.map(e => e.id === event.id ? event : e);
@@ -127,21 +187,16 @@ const App: React.FC = () => {
       } else {
         setEvents(prev => [...prev, data[0]]);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving event:', err);
-      alert('Local save successful. Cloud sync failed - check connection.');
-      setEvents(prev => {
-        const exists = prev.find(e => e.id === event.id);
-        if (exists) return prev.map(e => e.id === event.id ? event : e);
-        return [...prev, event];
-      });
+      alert('Sync failed: ' + (err.message || 'Unknown error'));
     }
     setShowForm(false);
     setEditingEvent(undefined);
   };
 
   const handlePublicSubmit = async (event: EventRecord) => {
-    if (!isSupabaseConfigured || !supabase) {
+    if (!isSupabaseConfigured) {
       console.info("Demo Submission Recorded:", event);
       return;
     }
@@ -150,14 +205,14 @@ const App: React.FC = () => {
       if (error) throw error;
     } catch (err) {
       console.error('Error submitting public inquiry:', err);
-      throw err; // Re-throw so form can handle UI error state if needed
+      throw err;
     }
   };
 
   const handleDeleteEvent = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (confirm('Permanently remove this booking record?')) {
-      if (!isSupabaseConfigured || !supabase) {
+      if (!isSupabaseConfigured) {
         setEvents(prev => prev.filter(e => e.id !== id));
         return;
       }
@@ -172,19 +227,19 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    if (isSupabaseConfigured && supabase?.auth) {
+    if (isSupabaseConfigured) {
       await supabase.auth.signOut();
     }
     setSession(null);
   };
 
   const format12hWindow = (startTime: string, duration: number) => {
-    if (!startTime) return "TBD";
+    if (!startTime || typeof startTime !== 'string' || !startTime.includes(':')) return "TBD";
     try {
       const [hours, minutes] = startTime.split(':').map(Number);
       const start = new Date();
       start.setHours(hours, minutes, 0, 0);
-      const end = new Date(start.getTime() + (duration || 0) * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + (Number(duration) || 0) * 60 * 60 * 1000);
       const fmt = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
       return `${fmt(start)} — ${fmt(end)}`;
     } catch {
@@ -201,12 +256,10 @@ const App: React.FC = () => {
     try {
       const briefing = await generateFOHBriefing(event);
       setAiBriefing(briefing);
-      
-      // Delay to ensure the briefing is rendered before print dialog opens
       setTimeout(() => {
         window.print();
         setIsGeneratingBriefing(false);
-      }, 1500);
+      }, 1000);
     } catch (err) {
       console.error("Print Error:", err);
       setIsGeneratingBriefing(false);
@@ -221,7 +274,6 @@ const App: React.FC = () => {
     );
   }
 
-  // Admin login if keys are present but no session
   if (isSupabaseConfigured && !session) {
     return <AdminLogin />;
   }
@@ -248,7 +300,6 @@ const App: React.FC = () => {
                 onClick={() => setShowEmbedModal(true)}
                 className="bg-transparent hover:bg-white/5 text-gray-300 px-4 py-2.5 rounded-md font-bold transition-all text-[10px] uppercase tracking-widest border border-white/10 hidden md:flex items-center gap-2"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
                 Embed Form
               </button>
               <button
@@ -256,27 +307,25 @@ const App: React.FC = () => {
                   setEditingEvent(undefined);
                   setShowForm(true);
                 }}
-                className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-md font-bold transition-all shadow-lg active:scale-95 flex items-center gap-2 border border-amber-600"
+                className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-md font-bold transition-all shadow-lg flex items-center gap-2 border border-amber-600"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                </svg>
                 New Booking
               </button>
-              {session && (
-                <button
-                  onClick={handleLogout}
-                  className="p-2.5 text-gray-500 hover:text-white transition-colors"
-                  title="Log Out"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                </button>
-              )}
+              <button onClick={handleLogout} className="p-2.5 text-gray-500 hover:text-white transition-colors" title="Log Out">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+              </button>
             </div>
           </div>
         </header>
 
         <main className="max-w-7xl mx-auto px-4 py-10">
+          {dbError && (
+            <div className="mb-8 bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between">
+              <p className="text-xs font-bold text-amber-800 uppercase tracking-widest">{dbError}</p>
+              <span className="text-[10px] bg-amber-200 px-2 py-1 rounded font-black text-amber-900">DEMO MODE ACTIVE</span>
+            </div>
+          )}
+
           {loading ? (
             <div className="h-64 flex items-center justify-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-700"></div>
@@ -292,22 +341,12 @@ const App: React.FC = () => {
 
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                  <div className="flex items-center gap-4">
-                    <h2 className="text-lg font-bold text-gray-800 uppercase tracking-tight">
-                      {activeFilter === 'all' && 'Total Pipeline'}
-                      {activeFilter === 'new' && 'Pending Inquiries'}
-                      {activeFilter === 'pending_deposit' && 'Outstanding Balances'}
-                    </h2>
-                    {activeFilter !== 'all' && (
-                      <button 
-                        onClick={() => setActiveFilter('all')}
-                        className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded hover:bg-amber-100 transition-colors uppercase tracking-widest"
-                      >
-                        View All
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-400 font-bold uppercase tracking-tighter">
+                  <h2 className="text-lg font-bold text-gray-800 uppercase tracking-tight">
+                    {activeFilter === 'all' && 'Total Pipeline'}
+                    {activeFilter === 'new' && 'Pending Inquiries'}
+                    {activeFilter === 'pending_deposit' && 'Outstanding Balances'}
+                  </h2>
+                  <div className="text-xs text-gray-400 font-bold uppercase tracking-tighter">
                     {filteredEvents.length} Event{filteredEvents.length !== 1 ? 's' : ''}
                   </div>
                 </div>
@@ -316,73 +355,43 @@ const App: React.FC = () => {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-[#fcfbf7] text-gray-500 text-[10px] uppercase font-bold tracking-widest border-b border-gray-100">
-                        <th className="px-6 py-4">Client Information</th>
+                        <th className="px-6 py-4">Client</th>
                         <th className="px-6 py-4">Schedule</th>
                         <th className="px-6 py-4">Financials</th>
                         <th className="px-6 py-4">Provisioning</th>
-                        <th className="px-6 py-4">Logistics</th>
                         <th className="px-6 py-4 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {filteredEvents.length > 0 ? filteredEvents.map(event => (
-                        <tr 
-                          key={event.id} 
-                          onClick={() => {
-                            setEditingEvent(event);
-                            setShowForm(true);
-                          }}
-                          className="group hover:bg-amber-50/10 transition-all cursor-pointer"
-                        >
+                        <tr key={event.id} onClick={() => { setEditingEvent(event); setShowForm(true); }} className="group hover:bg-amber-50/10 transition-all cursor-pointer">
                           <td className="px-6 py-5">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-1 h-10 rounded-full ${event.contacted ? 'bg-gray-200' : 'bg-amber-600 shadow-[0_0_8px_rgba(217,119,6,0.3)]'}`} />
-                              <div>
-                                <div className="font-bold text-gray-900 group-hover:text-amber-900 leading-none">{event.firstName} {event.lastName}</div>
-                                <div className="text-[11px] text-gray-400 font-bold uppercase mt-1 tracking-tighter">{event.eventType}</div>
-                              </div>
-                            </div>
+                            <div className="font-bold text-gray-900 group-hover:text-amber-900 leading-none">{event.firstName} {event.lastName}</div>
+                            <div className="text-[10px] text-gray-400 font-bold uppercase mt-1 tracking-tighter">{event.eventType}</div>
                           </td>
                           <td className="px-6 py-5">
-                            <div className="text-sm text-gray-900 font-bold">{event.dateRequested ? new Date(event.dateRequested).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBD'}</div>
-                            <div className="text-[11px] text-amber-700 font-black uppercase tracking-tighter">{format12hWindow(event.time, event.duration)}</div>
-                            <div className="text-[9px] text-gray-400 font-bold uppercase mt-0.5">{event.guests} Guests</div>
+                            <div className="text-sm text-gray-900 font-bold">{event.dateRequested || 'TBD'}</div>
+                            <div className="text-[10px] text-amber-700 font-black uppercase tracking-tighter">{format12hWindow(event.time, event.duration)}</div>
                           </td>
                           <td className="px-6 py-5">
-                            <div className="text-sm font-black text-gray-900 mb-1.5 tracking-tight">${(event.totalAmount || 0).toLocaleString()}</div>
-                            <div className="flex flex-col gap-1">
-                              <div className={`text-[9px] font-black px-1.5 py-0.5 rounded w-fit uppercase tracking-tighter border ${event.depositPaid ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
-                                Dep: {event.depositPaid ? 'PAID' : 'PENDING'}
-                              </div>
+                            <div className="text-sm font-black text-gray-900 mb-1.5 tracking-tight">${Number(event.totalAmount || 0).toLocaleString()}</div>
+                            <div className={`text-[9px] font-black px-1.5 py-0.5 rounded w-fit uppercase border ${event.depositPaid ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                              Dep: {event.depositPaid ? 'PAID' : 'PENDING'}
                             </div>
                           </td>
                           <td className="px-6 py-5">
                             <div className="text-[10px] text-gray-400 font-black uppercase mb-1">{event.barType}</div>
-                            <div className="flex gap-1 flex-wrap">
-                              {event.hasFood && <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[9px] font-black border border-blue-100">FOOD</span>}
-                              {event.hasTasting && <span className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-[9px] text-amber-500 font-black">TASTING</span>}
-                            </div>
-                          </td>
-                          <td className="px-6 py-5">
-                            <div className="flex flex-col gap-1">
-                              {event.addParking && <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[9px] font-black border border-amber-200 uppercase w-fit">PRKNG FEE</span>}
-                              {!event.beerWineOffered && <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-[9px] font-black border border-gray-200 uppercase w-fit">UNCORKING</span>}
-                              {!event.contacted && <span className="bg-amber-600 text-white px-1.5 py-0.5 rounded text-[9px] font-black uppercase w-fit animate-pulse">NEW</span>}
-                            </div>
+                            {event.hasFood && <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[9px] font-black border border-blue-100">FOOD</span>}
                           </td>
                           <td className="px-6 py-5 text-right">
                             <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={(e) => handlePrint(e, event)} className="p-2 text-amber-700 hover:bg-amber-100 rounded-md transition-colors" title="Generate Briefing"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg></button>
-                              <button onClick={(e) => handleDeleteEvent(e, event.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                              <button onClick={(e) => handlePrint(e, event)} className="p-2 text-amber-700 hover:bg-amber-100 rounded-md">Print</button>
+                              <button onClick={(e) => handleDeleteEvent(e, event.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-md">Del</button>
                             </div>
                           </td>
                         </tr>
                       )) : (
-                        <tr>
-                          <td colSpan={6} className="px-6 py-20 text-center">
-                            <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">No records found for this filter.</p>
-                          </td>
-                        </tr>
+                        <tr><td colSpan={5} className="px-6 py-20 text-center text-gray-400 uppercase font-black tracking-widest text-xs">No records in pipeline</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -395,32 +404,18 @@ const App: React.FC = () => {
         {showForm && <EventForm event={editingEvent} onSave={handleSaveEvent} onClose={() => setShowForm(false)} />}
         {showChart && <MonthlyRevenueChart events={events} onClose={() => setShowChart(false)} />}
         {showEmbedModal && <EmbedModal onClose={() => setShowEmbedModal(false)} />}
-
-        <footer className="max-w-7xl mx-auto px-4 py-6 border-t flex justify-between items-center opacity-70">
-           <div className="flex items-center gap-2">
-             <div className={`w-2.5 h-2.5 rounded-full ${isSupabaseConfigured ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse'}`} />
-             <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
-               {isSupabaseConfigured ? 'Live Pipeline Active' : 'Offline Preview Mode'}
-             </span>
-           </div>
-           {!isSupabaseConfigured && (
-             <div className="bg-amber-50 px-3 py-1.5 rounded-md border border-amber-100 flex items-center gap-2">
-               <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest">Database keys missing from environment. Cloud Sync inactive.</span>
-             </div>
-           )}
-           <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">DistilleryEvents Ops • v1.3.0</p>
+        
+        <footer className="max-w-7xl mx-auto px-4 py-8 opacity-40 text-center">
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500">DistilleryEvents Professional Operations • v1.3.1</p>
         </footer>
       </div>
 
       {isGeneratingBriefing && (
         <div className="fixed inset-0 bg-[#1a1a1a]/95 backdrop-blur-xl z-[100] flex items-center justify-center no-print">
           <div className="bg-white p-12 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm border border-amber-900/20 text-center">
-            <div className="relative mb-8">
-              <div className="w-20 h-20 border-8 border-amber-100 rounded-full"></div>
-              <div className="w-20 h-20 border-8 border-amber-600 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
-            </div>
-            <p className="text-2xl font-black text-gray-900 tracking-tighter uppercase">Distilling Strategy...</p>
-            <p className="text-xs text-gray-500 mt-4 font-bold leading-relaxed uppercase tracking-widest">Synthesizing Logistics & Staff Directives</p>
+            <div className="w-16 h-16 border-4 border-amber-600 border-t-transparent rounded-full animate-spin mb-6"></div>
+            <p className="text-xl font-black text-gray-900 tracking-tighter uppercase">Analyzing Event Order...</p>
+            <p className="text-[10px] text-gray-400 mt-2 font-bold uppercase tracking-widest">Generating AI Briefing</p>
           </div>
         </div>
       )}
@@ -429,5 +424,11 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+const App: React.FC = () => (
+  <ErrorBoundary>
+    <AppContent />
+  </ErrorBoundary>
+);
 
 export default App;
