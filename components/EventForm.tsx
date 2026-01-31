@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { EventRecord, EventType, BarType, FoodSource, FoodServiceType } from '../types';
 import { DEFAULT_EVENT } from '../constants';
 import { generateSafeId } from '../services/utils';
@@ -19,8 +19,8 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
   const [formData, setFormData] = useState<EventRecord>(
     event || { ...DEFAULT_EVENT, id: generateSafeId() } as EventRecord
   );
-  
-  // Suggestion logic: calculates based on selections but doesn't force it
+
+  // Logic to provide a suggestion without forcing it
   const calculateSuggestedTotal = useCallback(() => {
     let total = 1000; // Base Venue Fee
     const guestCount = Number(formData.guests) || 0;
@@ -64,6 +64,7 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
     <div className="fixed inset-0 bg-[#0a0a0a]/90 backdrop-blur-xl flex items-center justify-center p-4 z-[60] no-print">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto border border-white/20">
         
+        {/* Header */}
         <div className="p-8 border-b flex justify-between items-center bg-[#1a1a1a] text-white rounded-t-3xl sticky top-0 z-20">
           <div>
             <h2 className="text-2xl font-black tracking-tighter uppercase leading-none">
@@ -80,6 +81,7 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
         <form onSubmit={handleSubmit} className="p-10">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
             
+            {/* Column 1 */}
             <div className="space-y-8">
               <section>
                 <SectionTitle>01. Client Credentials</SectionTitle>
@@ -103,14 +105,11 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
                     <input required type="date" name="dateRequested" value={formData.dateRequested} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm outline-none" />
                     <input required type="time" name="time" value={formData.time} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm outline-none" />
                   </div>
-                  <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl">
-                    <span className="text-[10px] font-black uppercase text-gray-400">Hours</span>
-                    <input type="number" name="duration" value={formData.duration} onChange={handleChange} className="w-full bg-transparent font-black text-right outline-none" />
-                  </div>
                 </div>
               </section>
             </div>
 
+            {/* Column 2 */}
             <div className="space-y-8">
               <section>
                 <SectionTitle>03. Service Profile</SectionTitle>
@@ -126,22 +125,18 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
                         {Object.values(BarType).map(bt => <option key={bt} value={bt}>{bt}</option>)}
                       </select>
                     </div>
-                    <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-                      <label className="text-[10px] font-black uppercase">Food Provision</label>
-                      <input type="checkbox" name="hasFood" checked={formData.hasFood} onChange={handleChange} className="w-5 h-5 accent-amber-600" />
-                    </div>
                   </div>
                 </div>
               </section>
 
               <section>
-                <SectionTitle>04. Add-ons</SectionTitle>
+                <SectionTitle>04. Options</SectionTitle>
                 <div className="grid grid-cols-2 gap-3">
                   {[
+                    { key: 'hasFood', label: 'Include Food' },
                     { key: 'addParking', label: 'Valet/Parking' },
-                    { key: 'hasTasting', label: 'Spirits Tasting' },
-                    { key: 'hasTour', label: 'Distillery Tour' },
-                    { key: 'beerWineOffered', label: 'Beer & Wine' },
+                    { key: 'hasTasting', label: 'Tasting' },
+                    { key: 'hasTour', label: 'Tour' },
                   ].map(addon => (
                     <label key={addon.key} className={`flex flex-col p-3 rounded-xl border-2 cursor-pointer transition-all ${formData[addon.key as keyof EventRecord] ? 'bg-amber-50 border-amber-600' : 'bg-white border-gray-100 hover:border-amber-200'}`}>
                       <div className="flex justify-between items-start">
@@ -154,6 +149,7 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
               </section>
             </div>
 
+            {/* Column 3: Financials - NOW FULLY EDITABLE */}
             <div className="space-y-8 bg-gray-50 p-8 rounded-3xl border border-gray-100">
               <section>
                 <SectionTitle>05. Financial Outlook</SectionTitle>
@@ -161,7 +157,7 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Quote Total</label>
-                      <button type="button" onClick={handleApplySuggested} className="text-[8px] font-black text-amber-600 uppercase tracking-widest hover:underline">Apply Suggested (${calculateSuggestedTotal().toLocaleString()})</button>
+                      <button type="button" onClick={handleApplySuggested} className="text-[8px] font-black text-amber-600 uppercase tracking-widest hover:underline">Suggest Base Pricing</button>
                     </div>
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-gray-400">$</span>

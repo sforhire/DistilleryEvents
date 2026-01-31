@@ -1,5 +1,4 @@
-
-import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
+import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import { MOCK_EVENTS } from './constants';
 import EventForm from './components/EventForm';
@@ -15,11 +14,14 @@ import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Use React.Component explicitly to ensure TypeScript correctly identifies it as a React class component with state and props
-class ErrorBoundary extends React.Component<EBProps, EBState> {
+/**
+ * ErrorBoundary class component to catch runtime errors.
+ * Using Component directly from 'react' to resolve property access issues.
+ */
+class ErrorBoundary extends Component<EBProps, EBState> {
   constructor(props: EBProps) {
     super(props);
-    // Explicitly initialize the state property
+    // Initialize state to avoid "Property 'state' does not exist" errors
     this.state = { hasError: false, error: null };
   }
 
@@ -32,13 +34,13 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
   }
 
   render() {
-    // Access state via this.state
+    // Access state directly from the class instance
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
           <div className="max-w-xl w-full text-center">
             <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">Pipeline Failure</h1>
-            <p className="text-gray-600 mb-6 font-medium">The dashboard encountered a fatal runtime error.</p>
+            <p className="text-gray-600 mb-6 font-medium">Fatal runtime error detected.</p>
             <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 text-left overflow-auto max-h-64 shadow-2xl">
               {this.state.error?.stack || this.state.error?.message}
             </div>
@@ -47,7 +49,7 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
         </div>
       );
     }
-    // Access props via this.props
+    // Access children from props as required by the error log
     return this.props.children;
   }
 }
@@ -71,6 +73,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     // Check initial session
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      console.log("Auth Status:", currentSession ? "Logged In" : "Awaiting Credentials");
       setSession(currentSession);
       setLoading(false);
     }).catch(err => {
@@ -222,12 +225,11 @@ const AppContent: React.FC = () => {
     }} />;
   }
 
-  // Blank screen fix: Ensure loading state is handled and login is presented when no session exists
   if (loading && !session) {
     return (
       <div className="h-screen bg-[#faf9f6] flex flex-col items-center justify-center space-y-4">
         <div className="w-10 h-10 border-4 border-amber-700 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Loading Operations...</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Authenticating Pipeline...</p>
       </div>
     );
   }
@@ -265,7 +267,7 @@ const AppContent: React.FC = () => {
 
         <main className="max-w-7xl mx-auto px-6 py-10">
           {dbError && (
-            <div className="mb-6 bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between shadow-sm animate-pulse">
+            <div className="mb-6 bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between shadow-sm">
               <span className="text-[10px] font-black text-amber-800 uppercase tracking-widest flex items-center gap-2">
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
                 {dbError}
@@ -338,7 +340,7 @@ const AppContent: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-8 py-6 text-right">
-                        <div className="flex justify-end gap-3 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button onClick={(e) => handlePrint(e, event)} className="text-[9px] font-black text-amber-700 uppercase tracking-widest bg-amber-50 px-4 py-2 rounded-lg hover:bg-amber-100 transition-colors">Print Order</button>
                           <button onClick={(e) => handleDeleteEvent(e, event.id)} className="text-[9px] font-black text-red-700 uppercase tracking-widest bg-red-50 px-4 py-2 rounded-lg hover:bg-red-100 transition-colors">Archive</button>
                         </div>
