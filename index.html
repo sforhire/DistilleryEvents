@@ -6,6 +6,10 @@
     <title>DistilleryEvents Ops</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // Global polyfill to prevent "process is not defined" crashes in 3rd party libs
+      window.process = { env: { NODE_ENV: 'production' } };
+    </script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -27,7 +31,6 @@
         .print-only {
             display: none;
         }
-        /* Custom Scrollbar for the dark aesthetic */
         ::-webkit-scrollbar {
             width: 8px;
         }

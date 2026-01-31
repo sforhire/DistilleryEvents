@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import { MOCK_EVENTS } from './constants';
 import EventForm from './components/EventForm';
@@ -12,16 +12,15 @@ import AdminLogin from './components/AdminLogin';
 import { generateFOHBriefing } from './services/geminiService';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 
-// --- Error Boundary for Runtime Resilience ---
-// Fixed EBProps: making children optional to resolve usage errors (Property 'children' is missing)
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fixed: Explicitly extending React.Component and ensuring state/props are correctly typed
+// Fixed: Explicitly extended React.Component and declared state/props types to resolve 'Property state does not exist' errors
 class ErrorBoundary extends React.Component<EBProps, EBState> {
+  public state: EBState = { hasError: false, error: null };
+
   constructor(props: EBProps) { 
     super(props); 
-    this.state = { hasError: false, error: null }; 
   }
   
   static getDerivedStateFromError(error: Error): EBState { 
@@ -29,20 +28,20 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
   }
   
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
-    console.error("App Crash:", error, errorInfo); 
+    console.error("CRITICAL DASHBOARD CRASH:", error, errorInfo); 
   }
   
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-[#faf9f6] flex items-center justify-center p-8">
-          <div className="max-w-md w-full bg-white p-8 rounded-3xl shadow-2xl border border-red-100">
-            <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter mb-4">Component Crash</h1>
-            <p className="text-sm text-gray-500 mb-6 font-medium">The dashboard encountered a rendering error. This often happens if the database structure doesn't match the expected types.</p>
-            <div className="bg-red-50 p-4 rounded-xl text-xs font-mono text-red-700 mb-6 overflow-auto max-h-40">
-              {this.state.error?.message}
+        <div className="min-h-screen bg-white flex items-center justify-center p-12">
+          <div className="max-w-xl w-full">
+            <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">Runtime Exception</h1>
+            <p className="text-gray-600 mb-6 font-medium">The dashboard crashed during render. This usually happens when data from the database is malformed or missing expected properties.</p>
+            <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 overflow-auto max-h-64 shadow-2xl">
+              {this.state.error?.stack || this.state.error?.message}
             </div>
-            <button onClick={() => window.location.reload()} className="w-full bg-[#1a1a1a] text-amber-500 font-black uppercase tracking-widest py-4 rounded-xl">Reload Dashboard</button>
+            <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Reload Session</button>
           </div>
         </div>
       );
@@ -67,23 +66,17 @@ const AppContent: React.FC = () => {
   const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
 
-  // Auth listener
   useEffect(() => {
     if (!isSupabaseConfigured) {
       setLoading(false);
       return;
     }
 
-    const initAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-      } catch (err) {
-        console.error("Auth init error:", err);
-      }
-    };
-
-    initAuth();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    }).catch(err => {
+      console.error("Auth session fetch error:", err);
+    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
@@ -92,7 +85,6 @@ const AppContent: React.FC = () => {
     return () => subscription?.unsubscribe();
   }, []);
 
-  // Fetch events
   useEffect(() => {
     const fetchEvents = async () => {
       if (!isSupabaseConfigured) {
@@ -101,7 +93,6 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      // If we are in admin view but not logged in, wait for login
       if (!session && !isPublicView) {
         setLoading(false);
         return;
@@ -115,9 +106,8 @@ const AppContent: React.FC = () => {
           .order('dateRequested', { ascending: true });
 
         if (error) {
-          // Check specifically for "table not found"
           if (error.code === 'PGRST116' || error.message.includes('not found')) {
-            setDbError("Table 'events' does not exist in Supabase. Please run the setup SQL.");
+            setDbError("Pipeline Database ('events' table) missing. Using local cache.");
             setEvents(MOCK_EVENTS);
           } else {
             throw error;
@@ -127,8 +117,7 @@ const AppContent: React.FC = () => {
           setDbError(null);
         }
       } catch (err: any) {
-        console.error('Error fetching events:', err);
-        setDbError(err.message || "Failed to fetch data.");
+        setDbError(err.message || "Cloud connection failure.");
         setEvents(MOCK_EVENTS);
       } finally {
         setLoading(false);
@@ -142,9 +131,9 @@ const AppContent: React.FC = () => {
     if (!Array.isArray(events)) return { totalEvents: 0, totalRevenue: 0, newRequests: 0, pendingDeposits: 0 };
     return events.reduce((acc, curr) => ({
       totalEvents: acc.totalEvents + 1,
-      totalRevenue: acc.totalRevenue + (Number(curr.totalAmount) || 0),
-      newRequests: acc.newRequests + (curr.contacted ? 0 : 1),
-      pendingDeposits: acc.pendingDeposits + (!curr.depositPaid || !curr.balancePaid ? 1 : 0)
+      totalRevenue: acc.totalRevenue + (Number(curr?.totalAmount) || 0),
+      newRequests: acc.newRequests + (curr?.contacted ? 0 : 1),
+      pendingDeposits: acc.pendingDeposits + (!curr?.depositPaid || !curr?.balancePaid ? 1 : 0)
     }), { totalEvents: 0, totalRevenue: 0, newRequests: 0, pendingDeposits: 0 });
   }, [events]);
 
@@ -152,14 +141,14 @@ const AppContent: React.FC = () => {
     if (!Array.isArray(events)) return [];
     let result = [...events];
     if (activeFilter === 'new') {
-      result = result.filter(e => !e.contacted);
+      result = result.filter(e => e && !e.contacted);
     } else if (activeFilter === 'pending_deposit') {
-      result = result.filter(e => !e.depositPaid || !e.balancePaid);
+      result = result.filter(e => e && (!e.depositPaid || !e.balancePaid));
     }
     
     return result.sort((a, b) => {
-      const dateA = a.dateRequested ? new Date(a.dateRequested).getTime() : 0;
-      const dateB = b.dateRequested ? new Date(b.dateRequested).getTime() : 0;
+      const dateA = a?.dateRequested ? new Date(a.dateRequested).getTime() : 0;
+      const dateB = b?.dateRequested ? new Date(b.dateRequested).getTime() : 0;
       return dateA - dateB;
     });
   }, [events, activeFilter]);
@@ -188,23 +177,19 @@ const AppContent: React.FC = () => {
         setEvents(prev => [...prev, data[0]]);
       }
     } catch (err: any) {
-      console.error('Error saving event:', err);
-      alert('Sync failed: ' + (err.message || 'Unknown error'));
+      alert('Sync error: ' + err.message);
     }
     setShowForm(false);
     setEditingEvent(undefined);
   };
 
   const handlePublicSubmit = async (event: EventRecord) => {
-    if (!isSupabaseConfigured) {
-      console.info("Demo Submission Recorded:", event);
-      return;
-    }
+    if (!isSupabaseConfigured) return;
     try {
       const { error } = await supabase.from('events').insert(event);
       if (error) throw error;
     } catch (err) {
-      console.error('Error submitting public inquiry:', err);
+      console.error('Inquiry Submission Error:', err);
       throw err;
     }
   };
@@ -213,24 +198,17 @@ const AppContent: React.FC = () => {
     e.stopPropagation();
     if (confirm('Permanently remove this booking record?')) {
       if (!isSupabaseConfigured) {
-        setEvents(prev => prev.filter(e => e.id !== id));
+        setEvents(prev => prev.filter(ev => ev.id !== id));
         return;
       }
       try {
         const { error } = await supabase.from('events').delete().eq('id', id);
         if (error) throw error;
-        setEvents(prev => prev.filter(e => e.id !== id));
+        setEvents(prev => prev.filter(ev => ev.id !== id));
       } catch (err) {
         console.error('Error deleting event:', err);
       }
     }
-  };
-
-  const handleLogout = async () => {
-    if (isSupabaseConfigured) {
-      await supabase.auth.signOut();
-    }
-    setSession(null);
   };
 
   const format12hWindow = (startTime: string, duration: number) => {
@@ -259,19 +237,14 @@ const AppContent: React.FC = () => {
       setTimeout(() => {
         window.print();
         setIsGeneratingBriefing(false);
-      }, 1000);
+      }, 500);
     } catch (err) {
-      console.error("Print Error:", err);
       setIsGeneratingBriefing(false);
     }
   };
 
   if (isPublicView) {
-    return (
-      <div className="min-h-screen bg-[#faf9f6]">
-        <PublicEventForm onSubmit={handlePublicSubmit} />
-      </div>
-    );
+    return <PublicEventForm onSubmit={handlePublicSubmit} />;
   }
 
   if (isSupabaseConfigured && !session) {
@@ -281,48 +254,33 @@ const AppContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#faf9f6]">
       <div className="no-print">
-        <header className="bg-[#1a1a1a] border-b border-amber-900/20 sticky top-0 z-30 shadow-md">
-          <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 bg-amber-700 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(180,83,9,0.3)]">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                </svg>
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white tracking-tight uppercase">Distillery<span className="text-amber-600">Events</span></h1>
-                <p className="text-[10px] text-amber-500 font-bold tracking-widest uppercase">Operations Control</p>
-              </div>
+        <header className="bg-[#1a1a1a] h-20 flex items-center justify-between px-6 border-b border-amber-900/20 sticky top-0 z-40 shadow-xl">
+          <div className="flex items-center space-x-4">
+            <div className="w-10 h-10 bg-amber-700 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(180,83,9,0.5)]">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+              </svg>
             </div>
-            
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowEmbedModal(true)}
-                className="bg-transparent hover:bg-white/5 text-gray-300 px-4 py-2.5 rounded-md font-bold transition-all text-[10px] uppercase tracking-widest border border-white/10 hidden md:flex items-center gap-2"
-              >
-                Embed Form
-              </button>
-              <button
-                onClick={() => {
-                  setEditingEvent(undefined);
-                  setShowForm(true);
-                }}
-                className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-md font-bold transition-all shadow-lg flex items-center gap-2 border border-amber-600"
-              >
-                New Booking
-              </button>
-              <button onClick={handleLogout} className="p-2.5 text-gray-500 hover:text-white transition-colors" title="Log Out">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-              </button>
+            <div>
+              <h1 className="text-xl font-bold text-white tracking-tight uppercase leading-none">Distillery<span className="text-amber-600">Events</span></h1>
+              <p className="text-[9px] text-amber-500 font-bold tracking-widest uppercase mt-1">Operations Control</p>
             </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowEmbedModal(true)} className="bg-white/5 hover:bg-white/10 text-gray-400 px-4 py-2 rounded font-bold transition-all text-[10px] uppercase tracking-widest border border-white/5 hidden md:block">Embed</button>
+            <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded font-bold transition-all shadow-lg text-[10px] uppercase tracking-widest">New Booking</button>
+            <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+            </button>
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto px-4 py-10">
+        <main className="max-w-7xl mx-auto px-6 py-10">
           {dbError && (
             <div className="mb-8 bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between">
               <p className="text-xs font-bold text-amber-800 uppercase tracking-widest">{dbError}</p>
-              <span className="text-[10px] bg-amber-200 px-2 py-1 rounded font-black text-amber-900">DEMO MODE ACTIVE</span>
+              <span className="text-[10px] bg-amber-200 px-2 py-1 rounded font-black text-amber-900">OFFLINE DATA READY</span>
             </div>
           )}
 
@@ -341,14 +299,8 @@ const AppContent: React.FC = () => {
 
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                  <h2 className="text-lg font-bold text-gray-800 uppercase tracking-tight">
-                    {activeFilter === 'all' && 'Total Pipeline'}
-                    {activeFilter === 'new' && 'Pending Inquiries'}
-                    {activeFilter === 'pending_deposit' && 'Outstanding Balances'}
-                  </h2>
-                  <div className="text-xs text-gray-400 font-bold uppercase tracking-tighter">
-                    {filteredEvents.length} Event{filteredEvents.length !== 1 ? 's' : ''}
-                  </div>
+                  <h2 className="text-lg font-bold text-gray-800 uppercase tracking-tight">Active Pipeline</h2>
+                  <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{filteredEvents.length} Active Records</div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -362,36 +314,44 @@ const AppContent: React.FC = () => {
                         <th className="px-6 py-4 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-gray-100">
                       {filteredEvents.length > 0 ? filteredEvents.map(event => (
                         <tr key={event.id} onClick={() => { setEditingEvent(event); setShowForm(true); }} className="group hover:bg-amber-50/10 transition-all cursor-pointer">
                           <td className="px-6 py-5">
-                            <div className="font-bold text-gray-900 group-hover:text-amber-900 leading-none">{event.firstName} {event.lastName}</div>
-                            <div className="text-[10px] text-gray-400 font-bold uppercase mt-1 tracking-tighter">{event.eventType}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="font-bold text-gray-900 leading-none">{event.firstName} {event.lastName}</div>
+                              {!event.contacted && <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.5)]"></span>}
+                            </div>
+                            <div className="text-[9px] text-gray-400 font-bold uppercase mt-1 tracking-widest">{event.eventType}</div>
                           </td>
                           <td className="px-6 py-5">
                             <div className="text-sm text-gray-900 font-bold">{event.dateRequested || 'TBD'}</div>
-                            <div className="text-[10px] text-amber-700 font-black uppercase tracking-tighter">{format12hWindow(event.time, event.duration)}</div>
+                            <div className="text-[10px] text-amber-700 font-black uppercase mt-0.5 tracking-tighter">{format12hWindow(event.time, event.duration)}</div>
                           </td>
                           <td className="px-6 py-5">
-                            <div className="text-sm font-black text-gray-900 mb-1.5 tracking-tight">${Number(event.totalAmount || 0).toLocaleString()}</div>
-                            <div className={`text-[9px] font-black px-1.5 py-0.5 rounded w-fit uppercase border ${event.depositPaid ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
-                              Dep: {event.depositPaid ? 'PAID' : 'PENDING'}
+                            <div className="text-sm font-black text-gray-900 tracking-tight mb-1">${Number(event.totalAmount || 0).toLocaleString()}</div>
+                            <div className="flex gap-1">
+                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase border ${event.depositPaid ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                Dep: {event.depositPaid ? 'PAID' : 'PEND'}
+                              </span>
+                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase border ${event.balancePaid ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                Bal: {event.balancePaid ? 'PAID' : 'PEND'}
+                              </span>
                             </div>
                           </td>
                           <td className="px-6 py-5">
                             <div className="text-[10px] text-gray-400 font-black uppercase mb-1">{event.barType}</div>
-                            {event.hasFood && <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[9px] font-black border border-blue-100">FOOD</span>}
+                            {event.hasFood && <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[8px] font-black border border-blue-100">FOOD SERVICE</span>}
                           </td>
                           <td className="px-6 py-5 text-right">
-                            <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={(e) => handlePrint(e, event)} className="p-2 text-amber-700 hover:bg-amber-100 rounded-md">Print</button>
-                              <button onClick={(e) => handleDeleteEvent(e, event.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-md">Del</button>
+                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={(e) => handlePrint(e, event)} className="text-[10px] font-black text-amber-700 uppercase tracking-widest bg-amber-50 px-3 py-1.5 rounded hover:bg-amber-100">Print</button>
+                              <button onClick={(e) => handleDeleteEvent(e, event.id)} className="text-[10px] font-black text-red-700 uppercase tracking-widest bg-red-50 px-3 py-1.5 rounded hover:bg-red-100">Delete</button>
                             </div>
                           </td>
                         </tr>
                       )) : (
-                        <tr><td colSpan={5} className="px-6 py-20 text-center text-gray-400 uppercase font-black tracking-widest text-xs">No records in pipeline</td></tr>
+                        <tr><td colSpan={5} className="px-6 py-20 text-center text-gray-400 uppercase font-black tracking-widest text-xs">No records matching criteria</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -404,18 +364,13 @@ const AppContent: React.FC = () => {
         {showForm && <EventForm event={editingEvent} onSave={handleSaveEvent} onClose={() => setShowForm(false)} />}
         {showChart && <MonthlyRevenueChart events={events} onClose={() => setShowChart(false)} />}
         {showEmbedModal && <EmbedModal onClose={() => setShowEmbedModal(false)} />}
-        
-        <footer className="max-w-7xl mx-auto px-4 py-8 opacity-40 text-center">
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500">DistilleryEvents Professional Operations • v1.3.1</p>
-        </footer>
       </div>
 
       {isGeneratingBriefing && (
-        <div className="fixed inset-0 bg-[#1a1a1a]/95 backdrop-blur-xl z-[100] flex items-center justify-center no-print">
-          <div className="bg-white p-12 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm border border-amber-900/20 text-center">
-            <div className="w-16 h-16 border-4 border-amber-600 border-t-transparent rounded-full animate-spin mb-6"></div>
-            <p className="text-xl font-black text-gray-900 tracking-tighter uppercase">Analyzing Event Order...</p>
-            <p className="text-[10px] text-gray-400 mt-2 font-bold uppercase tracking-widest">Generating AI Briefing</p>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex items-center justify-center no-print">
+          <div className="bg-white p-12 rounded-3xl text-center">
+            <div className="w-12 h-12 border-4 border-amber-600 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+            <p className="text-lg font-black uppercase tracking-tighter">Synthesizing Briefing...</p>
           </div>
         </div>
       )}
