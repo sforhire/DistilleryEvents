@@ -1,4 +1,3 @@
-
 import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import { MOCK_EVENTS } from './constants';
@@ -15,8 +14,8 @@ import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fixed: Explicitly extended React.Component and declared state/props types to resolve 'Property state does not exist' errors
-class ErrorBoundary extends React.Component<EBProps, EBState> {
+// Fixed: Correctly extend Component from react and ensure EBProps is properly recognized to provide 'props'
+class ErrorBoundary extends Component<EBProps, EBState> {
   public state: EBState = { hasError: false, error: null };
 
   constructor(props: EBProps) { 
@@ -46,6 +45,7 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
         </div>
       );
     }
+    // Correctly return children from props
     return this.props.children;
   }
 }
