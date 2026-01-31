@@ -1,11 +1,10 @@
-
 import { createClient } from '@supabase/supabase-js';
 import { getEnv } from './utils';
 
+// Prioritize platform injected env vars or window.process mocks
 const supabaseUrl = getEnv('SUPABASE_URL');
 const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
 
-// Verify configuration values are actual strings and not literal "undefined" strings
 export const isSupabaseConfigured = !!(
   supabaseUrl && 
   supabaseAnonKey && 
@@ -14,24 +13,24 @@ export const isSupabaseConfigured = !!(
   supabaseUrl.startsWith('http')
 );
 
-// Resilient client initialization
 let clientInstance: any = null;
 
 if (isSupabaseConfigured) {
   try {
     clientInstance = createClient(supabaseUrl!, supabaseAnonKey!);
   } catch (e) {
-    console.error("DistilleryEvents: Failed to initialize Supabase client", e);
+    console.error("Supabase Init Error:", e);
   }
 }
 
-// Exported client with proxy fallbacks for Demo Mode to prevent property access errors
+// Resilient proxy ensures UI doesn't crash if keys are missing
 export const supabase = clientInstance || {
   auth: { 
     getSession: async () => ({ data: { session: null }, error: null }), 
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-    signInWithPassword: async () => ({ data: { session: null }, error: { message: "Cloud Sync inactive. Check environment variables." } }),
-    signOut: async () => ({ error: null })
+    signInWithPassword: async () => ({ data: { session: null }, error: { message: "Supabase not configured. Check Vercel environment variables." } }),
+    signOut: async () => ({ error: null }),
+    getUser: async () => ({ data: { user: null }, error: null })
   },
   from: () => ({
     select: () => ({ 
@@ -45,5 +44,5 @@ export const supabase = clientInstance || {
 } as any;
 
 if (!clientInstance) {
-  console.info("⚡ DistilleryEvents: Pipeline Sync inactive (Missing Keys). App is in Demo Mode.");
+  console.info("⚡ DistilleryEvents: Cloud sync disabled (keys missing). App in local demo mode.");
 }
