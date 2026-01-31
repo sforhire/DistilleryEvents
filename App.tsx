@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
+import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import { MOCK_EVENTS } from './constants';
 import EventForm from './components/EventForm';
@@ -15,8 +15,12 @@ import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Use React.Component explicitly to fix "Property 'props' does not exist on type 'ErrorBoundary'"
-class ErrorBoundary extends React.Component<EBProps, EBState> {
+/**
+ * Robust Error Boundary using Class Component.
+ * Note: Error Boundaries must be class components in React.
+ * Explicitly extending Component with EBProps/EBState to ensure proper typing of this.props and this.state.
+ */
+class ErrorBoundary extends Component<EBProps, EBState> {
   public state: EBState = { hasError: false, error: null };
 
   constructor(props: EBProps) { 
@@ -28,10 +32,10 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
   }
   
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
-    console.error("DistilleryEvents Dashboard Crash:", error, errorInfo); 
+    console.error("DistilleryEvents Runtime Failure:", error, errorInfo); 
   }
   
-  render() {
+  render(): ReactNode {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
@@ -46,7 +50,7 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
         </div>
       );
     }
-    // Access children through this.props which is inherited from React.Component
+    // Fix: Using this.props correctly inherited from Component<EBProps, EBState>
     return this.props.children;
   }
 }
@@ -73,10 +77,13 @@ const AppContent: React.FC = () => {
       return;
     }
 
+    // Resolve session status
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      if (!session && !isPublicView) setLoading(false);
     }).catch(err => {
-      console.error("Auth session fetch error:", err);
+      console.error("Auth initialization error:", err);
+      setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -86,17 +93,18 @@ const AppContent: React.FC = () => {
     return () => {
       if (subscription) subscription.unsubscribe();
     };
-  }, []);
+  }, [isPublicView]);
 
   useEffect(() => {
     const fetchEvents = async () => {
+      // Demo Mode: Use mock data immediately
       if (!isSupabaseConfigured) {
         setEvents(MOCK_EVENTS);
         setLoading(false);
         return;
       }
 
-      // If we are in admin view but have no session, don't try to fetch
+      // If keys are provided but user isn't logged in, stop loading and wait for AdminLogin
       if (!session && !isPublicView) {
         setLoading(false);
         return;
@@ -110,18 +118,14 @@ const AppContent: React.FC = () => {
           .order('dateRequested', { ascending: true });
 
         if (error) {
-          if (error.code === 'PGRST116' || error.message.includes('not found')) {
-            setDbError("Pipeline Database offline. Using local storage.");
-            setEvents(MOCK_EVENTS);
-          } else {
-            throw error;
-          }
+          throw error;
         } else {
           setEvents(data || []);
           setDbError(null);
         }
       } catch (err: any) {
-        setDbError(err.message || "Cloud connection failure.");
+        console.error("Data Fetch Error:", err);
+        setDbError("Local database active. Cloud sync unavailable.");
         setEvents(MOCK_EVENTS);
       } finally {
         setLoading(false);
@@ -228,7 +232,7 @@ const AppContent: React.FC = () => {
     }} />;
   }
 
-  if (isSupabaseConfigured && !session) {
+  if (isSupabaseConfigured && !session && !loading) {
     return <AdminLogin />;
   }
 
@@ -251,9 +255,11 @@ const AppContent: React.FC = () => {
           <div className="flex items-center gap-3">
             <button onClick={() => setShowEmbedModal(true)} className="bg-white/5 hover:bg-white/10 text-gray-400 px-4 py-2 rounded font-bold transition-all text-[10px] uppercase tracking-widest border border-white/5 hidden md:block">Embed</button>
             <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded font-bold transition-all shadow-lg text-[10px] uppercase tracking-widest">New Booking</button>
-            <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-            </button>
+            {isSupabaseConfigured && (
+              <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+              </button>
+            )}
           </div>
         </header>
 
@@ -264,6 +270,12 @@ const AppContent: React.FC = () => {
             </div>
           ) : (
             <>
+              {dbError && (
+                <div className="mb-6 bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between">
+                  <span className="text-[10px] font-black text-amber-800 uppercase tracking-widest">{dbError}</span>
+                </div>
+              )}
+              
               <DashboardStats 
                 stats={stats} 
                 activeFilter={activeFilter} 
