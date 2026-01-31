@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <script>
-      // Initialize a robust process.env mock to prevent ReferenceErrors in raw ESM mode
+      // CRITICAL: Initialize environment mocks BEFORE any modules load
       window.process = { 
         env: { 
           NODE_ENV: 'production',
@@ -16,6 +16,8 @@
           SUPABASE_ANON_KEY: ''
         } 
       };
+      // Provide a secondary fallback for libraries that look for 'env' on window
+      window.env = window.process.env;
     </script>
     <style>
         body {

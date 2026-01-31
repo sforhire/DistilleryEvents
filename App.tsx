@@ -1,4 +1,3 @@
-
 import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import { MOCK_EVENTS } from './constants';
@@ -16,26 +15,22 @@ interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
 /**
- * Standard React Error Boundary component.
- * Fix: Extended the imported 'Component' directly to ensure TypeScript correctly resolves 'state' and 'props' properties.
+ * Robust ErrorBoundary component for catching dashboard runtime failures.
+ * Fixed property access issues by using explicit inheritance and class property initialization.
  */
-class ErrorBoundary extends Component<EBProps, EBState> {
-  constructor(props: EBProps) {
-    super(props);
-    // Fix: Explicitly initializing state in constructor
-    this.state = { hasError: false, error: null };
-  }
+class ErrorBoundary extends React.Component<EBProps, EBState> {
+  // Use class property for state initialization to resolve "state does not exist" errors in specific TS environments
+  state: EBState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): EBState {
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("DistilleryEvents Dashboard Crash:", error, errorInfo);
+    console.error("Dashboard Runtime Crash:", error, errorInfo);
   }
 
   render() {
-    // Fix: Using this.state and this.props which are now properly inherited from Component<EBProps, EBState>
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
@@ -43,7 +38,7 @@ class ErrorBoundary extends Component<EBProps, EBState> {
             <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">Pipeline Failure</h1>
             <p className="text-gray-600 mb-6 font-medium">The dashboard encountered a fatal runtime error.</p>
             <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 text-left overflow-auto max-h-64 shadow-2xl">
-              {this.state.error?.stack || this.state.error?.message || "Unknown error"}
+              {this.state.error?.stack || this.state.error?.message || "Internal context conflict."}
             </div>
             <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Reboot System</button>
           </div>
@@ -71,25 +66,36 @@ const AppContent: React.FC = () => {
   const [dbError, setDbError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check initial session
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
-      setSession(currentSession);
-      // Only stop loading if we are NOT configured for Supabase (local mode)
-      // or if we HAVE a session. If configured but no session, we stay in "loading" 
-      // until the auth check is definitive.
-      setLoading(false);
-    }).catch(err => {
-      console.error("Auth session fetch error:", err);
-      setLoading(false);
-    });
+    let mounted = true;
+
+    // Initial check
+    const checkSession = async () => {
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        if (mounted) {
+          setSession(currentSession);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error("Auth init failure:", err);
+        if (mounted) setLoading(false);
+      }
+    };
+
+    checkSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      console.log("Auth Event:", _event);
-      setSession(newSession);
+      console.log("Auth State Changed:", _event);
+      if (mounted) {
+        setSession(newSession);
+        // Ensure loading is false when auth state changes definitively
+        setLoading(false);
+      }
     });
 
     return () => {
-      if (subscription) subscription.unsubscribe();
+      mounted = false;
+      subscription.unsubscribe();
     };
   }, []);
 
@@ -100,6 +106,7 @@ const AppContent: React.FC = () => {
         return;
       }
 
+      // If we are in the admin dashboard path, we MUST have a session or be in public view
       if (!session && !isPublicView) {
         return;
       }
@@ -228,12 +235,12 @@ const AppContent: React.FC = () => {
     }} />;
   }
 
-  // Defend against white screen during auth transition
+  // Ensure loading UI is displayed only when absolutely necessary
   if (loading && !session && isSupabaseConfigured) {
     return (
       <div className="h-screen bg-[#faf9f6] flex flex-col items-center justify-center space-y-4">
         <div className="w-10 h-10 border-4 border-amber-700 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Authenticating Operations...</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Syncing Engine...</p>
       </div>
     );
   }
