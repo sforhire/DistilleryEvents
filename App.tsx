@@ -1,4 +1,5 @@
-import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
+
+import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import { MOCK_EVENTS } from './constants';
 import EventForm from './components/EventForm';
@@ -14,8 +15,8 @@ import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fixed: Correctly extend Component from react and ensure EBProps is properly recognized to provide 'props'
-class ErrorBoundary extends Component<EBProps, EBState> {
+// Use React.Component explicitly to fix "Property 'props' does not exist on type 'ErrorBoundary'"
+class ErrorBoundary extends React.Component<EBProps, EBState> {
   public state: EBState = { hasError: false, error: null };
 
   constructor(props: EBProps) { 
@@ -27,7 +28,7 @@ class ErrorBoundary extends Component<EBProps, EBState> {
   }
   
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
-    console.error("CRITICAL DASHBOARD CRASH:", error, errorInfo); 
+    console.error("DistilleryEvents Dashboard Crash:", error, errorInfo); 
   }
   
   render() {
@@ -35,17 +36,17 @@ class ErrorBoundary extends Component<EBProps, EBState> {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
           <div className="max-w-xl w-full">
-            <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">Runtime Exception</h1>
-            <p className="text-gray-600 mb-6 font-medium">The dashboard crashed during render. This usually happens when data from the database is malformed or missing expected properties.</p>
+            <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">Pipeline Crash</h1>
+            <p className="text-gray-600 mb-6 font-medium">The dashboard encountered a fatal runtime error. This usually happens when component state becomes inconsistent during a transition.</p>
             <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 overflow-auto max-h-64 shadow-2xl">
               {this.state.error?.stack || this.state.error?.message}
             </div>
-            <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Reload Session</button>
+            <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Reboot Pipeline</button>
           </div>
         </div>
       );
     }
-    // Correctly return children from props
+    // Access children through this.props which is inherited from React.Component
     return this.props.children;
   }
 }
@@ -82,7 +83,9 @@ const AppContent: React.FC = () => {
       setSession(session);
     });
 
-    return () => subscription?.unsubscribe();
+    return () => {
+      if (subscription) subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -93,6 +96,7 @@ const AppContent: React.FC = () => {
         return;
       }
 
+      // If we are in admin view but have no session, don't try to fetch
       if (!session && !isPublicView) {
         setLoading(false);
         return;
@@ -107,7 +111,7 @@ const AppContent: React.FC = () => {
 
         if (error) {
           if (error.code === 'PGRST116' || error.message.includes('not found')) {
-            setDbError("Pipeline Database ('events' table) missing. Using local cache.");
+            setDbError("Pipeline Database offline. Using local storage.");
             setEvents(MOCK_EVENTS);
           } else {
             throw error;
@@ -128,8 +132,8 @@ const AppContent: React.FC = () => {
   }, [session, isPublicView]);
 
   const stats = useMemo(() => {
-    if (!Array.isArray(events)) return { totalEvents: 0, totalRevenue: 0, newRequests: 0, pendingDeposits: 0 };
-    return events.reduce((acc, curr) => ({
+    const safeEvents = Array.isArray(events) ? events : [];
+    return safeEvents.reduce((acc, curr) => ({
       totalEvents: acc.totalEvents + 1,
       totalRevenue: acc.totalRevenue + (Number(curr?.totalAmount) || 0),
       newRequests: acc.newRequests + (curr?.contacted ? 0 : 1),
@@ -138,8 +142,8 @@ const AppContent: React.FC = () => {
   }, [events]);
 
   const filteredEvents = useMemo(() => {
-    if (!Array.isArray(events)) return [];
-    let result = [...events];
+    const safeEvents = Array.isArray(events) ? events : [];
+    let result = [...safeEvents];
     if (activeFilter === 'new') {
       result = result.filter(e => e && !e.contacted);
     } else if (activeFilter === 'pending_deposit') {
@@ -183,17 +187,6 @@ const AppContent: React.FC = () => {
     setEditingEvent(undefined);
   };
 
-  const handlePublicSubmit = async (event: EventRecord) => {
-    if (!isSupabaseConfigured) return;
-    try {
-      const { error } = await supabase.from('events').insert(event);
-      if (error) throw error;
-    } catch (err) {
-      console.error('Inquiry Submission Error:', err);
-      throw err;
-    }
-  };
-
   const handleDeleteEvent = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (confirm('Permanently remove this booking record?')) {
@@ -208,20 +201,6 @@ const AppContent: React.FC = () => {
       } catch (err) {
         console.error('Error deleting event:', err);
       }
-    }
-  };
-
-  const format12hWindow = (startTime: string, duration: number) => {
-    if (!startTime || typeof startTime !== 'string' || !startTime.includes(':')) return "TBD";
-    try {
-      const [hours, minutes] = startTime.split(':').map(Number);
-      const start = new Date();
-      start.setHours(hours, minutes, 0, 0);
-      const end = new Date(start.getTime() + (Number(duration) || 0) * 60 * 60 * 1000);
-      const fmt = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-      return `${fmt(start)} — ${fmt(end)}`;
-    } catch {
-      return startTime;
     }
   };
 
@@ -244,7 +223,9 @@ const AppContent: React.FC = () => {
   };
 
   if (isPublicView) {
-    return <PublicEventForm onSubmit={handlePublicSubmit} />;
+    return <PublicEventForm onSubmit={async (e) => {
+      if (isSupabaseConfigured) await supabase.from('events').insert(e);
+    }} />;
   }
 
   if (isSupabaseConfigured && !session) {
@@ -277,13 +258,6 @@ const AppContent: React.FC = () => {
         </header>
 
         <main className="max-w-7xl mx-auto px-6 py-10">
-          {dbError && (
-            <div className="mb-8 bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between">
-              <p className="text-xs font-bold text-amber-800 uppercase tracking-widest">{dbError}</p>
-              <span className="text-[10px] bg-amber-200 px-2 py-1 rounded font-black text-amber-900">OFFLINE DATA READY</span>
-            </div>
-          )}
-
           {loading ? (
             <div className="h-64 flex items-center justify-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-700"></div>
@@ -326,7 +300,7 @@ const AppContent: React.FC = () => {
                           </td>
                           <td className="px-6 py-5">
                             <div className="text-sm text-gray-900 font-bold">{event.dateRequested || 'TBD'}</div>
-                            <div className="text-[10px] text-amber-700 font-black uppercase mt-0.5 tracking-tighter">{format12hWindow(event.time, event.duration)}</div>
+                            <div className="text-[10px] text-amber-700 font-black uppercase mt-0.5 tracking-tighter">{event.time} — {event.duration}h</div>
                           </td>
                           <td className="px-6 py-5">
                             <div className="text-sm font-black text-gray-900 tracking-tight mb-1">${Number(event.totalAmount || 0).toLocaleString()}</div>
