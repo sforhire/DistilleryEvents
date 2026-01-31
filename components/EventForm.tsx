@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { EventRecord, EventType, BarType, FoodSource, FoodServiceType } from '../types';
 import { DEFAULT_EVENT } from '../constants';
 import { generateSafeId } from '../services/utils';
@@ -10,10 +9,49 @@ interface EventFormProps {
   onClose: () => void;
 }
 
+const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <h3 className="text-[10px] font-black text-amber-700 uppercase tracking-[0.2em] border-b border-amber-100 pb-2 mb-6 flex items-center gap-2">
+    {children}
+  </h3>
+);
+
 const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
   const [formData, setFormData] = useState<EventRecord>(
     event || { ...DEFAULT_EVENT, id: generateSafeId() } as EventRecord
   );
+  
+  // Track if we should auto-calculate or if the user has manually entered a value
+  const [isAutoPricing, setIsAutoPricing] = useState(!event);
+
+  const calculateSuggestedTotal = useCallback(() => {
+    let total = 1000; // Base Venue Fee
+    const guestCount = Number(formData.guests) || 0;
+    
+    total += guestCount * 25; // Guest-based fee
+
+    if (formData.barType === BarType.OPEN) total += guestCount * 35;
+    if (formData.hasFood && formData.foodSource === FoodSource.CATERED) total += guestCount * 45;
+    
+    if (formData.addParking) total += 500;
+    if (formData.hasTasting) total += guestCount * 20;
+    if (formData.hasTour) total += guestCount * 15;
+    
+    return total;
+  }, [formData.guests, formData.barType, formData.hasFood, formData.foodSource, formData.addParking, formData.hasTasting, formData.hasTour]);
+
+  // Handle auto-calculation updates
+  useEffect(() => {
+    if (isAutoPricing) {
+      const suggestedTotal = calculateSuggestedTotal();
+      const suggestedDeposit = Math.round(suggestedTotal * 0.25);
+      
+      setFormData(prev => ({
+        ...prev,
+        totalAmount: suggestedTotal,
+        depositAmount: suggestedDeposit
+      }));
+    }
+  }, [isAutoPricing, calculateSuggestedTotal]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,79 +68,217 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
       val = value === '' ? 0 : parseFloat(value);
     }
     
+    // If user manually changes total or deposit, stop auto-calculating
+    if (name === 'totalAmount' || name === 'depositAmount') {
+      setIsAutoPricing(false);
+    }
+    
     setFormData(prev => ({
       ...prev,
       [name]: val
     }));
   };
 
+  const handleSnapToSuggested = () => {
+    setIsAutoPricing(true);
+  };
+
   return (
-    <div className="fixed inset-0 bg-[#1a1a1a]/75 backdrop-blur-md flex items-center justify-center p-4 z-50 no-print">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[95vh] overflow-y-auto border border-amber-900/10">
-        <div className="p-6 border-b flex justify-between items-center bg-[#1a1a1a] text-white rounded-t-xl sticky top-0 z-10 shadow-lg">
+    <div className="fixed inset-0 bg-[#0a0a0a]/90 backdrop-blur-xl flex items-center justify-center p-4 z-[60] no-print">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto border border-white/20">
+        
+        {/* Header */}
+        <div className="p-8 border-b flex justify-between items-center bg-[#1a1a1a] text-white rounded-t-3xl sticky top-0 z-20">
           <div>
-            <h2 className="text-xl font-black tracking-tighter uppercase leading-none">
-              {event ? 'Update Manifest' : 'Initialize Booking'}
+            <h2 className="text-2xl font-black tracking-tighter uppercase leading-none">
+              {event ? 'Modify Manifest' : 'Build New Booking'}
             </h2>
-            <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest mt-1">DistilleryEvents Operations Control</p>
+            <div className="flex items-center gap-4 mt-2">
+              <span className="text-[10px] text-amber-500 font-bold uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded">OPS-PIPELINE-v2.1</span>
+              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest italic">ID: {formData.id.split('-')[0]}</span>
+            </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors text-3xl leading-none">&times;</button>
+          <button onClick={onClose} type="button" className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-full flex items-center justify-center transition-all text-2xl">&times;</button>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-8 space-y-10">
-          <div className="flex items-center justify-between bg-amber-50 p-5 rounded-xl border border-amber-200">
-            <div className="flex items-center space-x-4">
-              <input
-                type="checkbox"
-                id="contacted"
-                name="contacted"
-                checked={formData.contacted}
-                onChange={handleChange}
-                className="w-6 h-6 text-amber-600 border-amber-300 rounded focus:ring-amber-500 cursor-pointer"
-              />
-              <label htmlFor="contacted" className="font-black text-amber-900 cursor-pointer uppercase text-[11px] tracking-widest">
-                Outreach & Coordination Confirmed
-              </label>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+        <form onSubmit={handleSubmit} className="p-10">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+            
+            {/* Column 1: Client & Logistics */}
             <div className="space-y-8">
-              <h3 className="text-[12px] font-black text-amber-800 uppercase tracking-[0.2em] border-b pb-3 flex items-center gap-2">
-                Primary Client Record
-              </h3>
-              <div className="grid grid-cols-2 gap-5">
-                <input required name="firstName" placeholder="First Name" value={formData.firstName} onChange={handleChange} className="block w-full rounded-lg border-gray-200 border p-3" />
-                <input required name="lastName" placeholder="Last Name" value={formData.lastName} onChange={handleChange} className="block w-full rounded-lg border-gray-200 border p-3" />
-              </div>
-              <input required type="email" name="email" placeholder="Email" value={formData.email} onChange={handleChange} className="block w-full rounded-lg border-gray-200 border p-3" />
-              
-              <h3 className="text-[12px] font-black text-amber-800 uppercase tracking-[0.2em] border-b pb-3">Manifest</h3>
-              <div className="grid grid-cols-2 gap-5">
-                <select name="eventType" value={formData.eventType} onChange={handleChange} className="block w-full rounded-lg border-gray-200 border p-3">
-                  {Object.values(EventType).map(type => <option key={type} value={type}>{type}</option>)}
-                </select>
-                <input type="number" name="guests" placeholder="Guests" value={formData.guests} onChange={handleChange} className="block w-full rounded-lg border-gray-200 border p-3" />
-              </div>
-            </div>
-
-            <div className="space-y-8">
-              <h3 className="text-[12px] font-black text-amber-800 uppercase tracking-[0.2em] border-b pb-3">Logistics</h3>
-              <div className="p-4 bg-gray-50 rounded-lg space-y-4">
-                <select name="barType" value={formData.barType} onChange={handleChange} className="block w-full rounded-lg border-gray-200 border p-3">
-                  {Object.values(BarType).map(bt => <option key={bt} value={bt}>{bt}</option>)}
-                </select>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase">Food Service</span>
-                  <input type="checkbox" name="hasFood" checked={formData.hasFood} onChange={handleChange} className="w-6 h-6" />
+              <section>
+                <SectionTitle>01. Client Credentials</SectionTitle>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <input required name="firstName" placeholder="First Name" value={formData.firstName} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm focus:ring-2 focus:ring-amber-500 outline-none transition-all" />
+                    <input required name="lastName" placeholder="Last Name" value={formData.lastName} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm focus:ring-2 focus:ring-amber-500 outline-none transition-all" />
+                  </div>
+                  <input required type="email" name="email" placeholder="Client Email" value={formData.email} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm focus:ring-2 focus:ring-amber-500 outline-none transition-all" />
+                  <input required name="phone" placeholder="Phone Number" value={formData.phone} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm focus:ring-2 focus:ring-amber-500 outline-none transition-all" />
                 </div>
+              </section>
+
+              <section>
+                <SectionTitle>02. Event Timing</SectionTitle>
+                <div className="space-y-4">
+                  <select name="eventType" value={formData.eventType} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm font-bold bg-gray-50">
+                    {Object.values(EventType).map(type => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input required type="date" name="dateRequested" value={formData.dateRequested} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm outline-none" />
+                    <input required type="time" name="time" value={formData.time} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm outline-none" />
+                  </div>
+                  <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl">
+                    <span className="text-[10px] font-black uppercase text-gray-400">Hours</span>
+                    <input type="number" name="duration" value={formData.duration} onChange={handleChange} className="w-full bg-transparent font-black text-right outline-none" />
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            {/* Column 2: Service & Add-ons */}
+            <div className="space-y-8">
+              <section>
+                <SectionTitle>03. Service Profile</SectionTitle>
+                <div className="space-y-4">
+                  <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-black uppercase">Guest Count</span>
+                      <input type="number" name="guests" value={formData.guests} onChange={handleChange} className="w-20 bg-white border border-gray-200 rounded-lg p-2 text-center font-black" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Bar Program</label>
+                      <select name="barType" value={formData.barType} onChange={handleChange} className="block w-full rounded-xl border-gray-200 border p-3 text-xs font-bold">
+                        {Object.values(BarType).map(bt => <option key={bt} value={bt}>{bt}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                      <label className="text-[10px] font-black uppercase">Food Provision</label>
+                      <input type="checkbox" name="hasFood" checked={formData.hasFood} onChange={handleChange} className="w-5 h-5 accent-amber-600" />
+                    </div>
+                    {formData.hasFood && (
+                      <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
+                        <select name="foodSource" value={formData.foodSource} onChange={handleChange} className="block w-full rounded-xl border-gray-200 border p-2 text-[10px] font-bold">
+                          {Object.values(FoodSource).map(fs => <option key={fs} value={fs}>{fs}</option>)}
+                        </select>
+                        <select name="foodServiceType" value={formData.foodServiceType} onChange={handleChange} className="block w-full rounded-xl border-gray-200 border p-2 text-[10px] font-bold">
+                          {Object.values(FoodServiceType).map(fst => <option key={fst} value={fst}>{fst}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <SectionTitle>04. Premium Add-ons</SectionTitle>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { key: 'addParking', label: 'Valet/Parking', sub: '+$500 fee' },
+                    { key: 'hasTasting', label: 'Spirits Tasting', sub: '+$20/head' },
+                    { key: 'hasTour', label: 'Distillery Tour', sub: '+$15/head' },
+                    { key: 'beerWineOffered', label: 'Beer & Wine', sub: 'Included' },
+                  ].map(addon => (
+                    <label key={addon.key} className={`flex flex-col p-3 rounded-xl border-2 cursor-pointer transition-all ${formData[addon.key as keyof EventRecord] ? 'bg-amber-50 border-amber-600' : 'bg-white border-gray-100 hover:border-amber-200'}`}>
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="text-[10px] font-black uppercase leading-tight">{addon.label}</span>
+                        <input 
+                          type="checkbox" 
+                          name={addon.key} 
+                          checked={!!formData[addon.key as keyof EventRecord]} 
+                          onChange={handleChange} 
+                          className="w-4 h-4 accent-amber-600" 
+                        />
+                      </div>
+                      <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">{addon.sub}</span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            {/* Column 3: Financials & Review */}
+            <div className="space-y-8 bg-gray-50 p-8 rounded-3xl border border-gray-100">
+              <section>
+                <SectionTitle>05. Financial Outlook</SectionTitle>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-end">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Quote Total</label>
+                      {!isAutoPricing && (
+                        <button 
+                          type="button" 
+                          onClick={handleSnapToSuggested}
+                          className="text-[8px] font-black text-amber-600 uppercase tracking-widest hover:underline"
+                        >
+                          Reset to Suggested (${calculateSuggestedTotal().toLocaleString()})
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-gray-400">$</span>
+                      <input 
+                        type="number" 
+                        name="totalAmount" 
+                        value={formData.totalAmount} 
+                        onChange={handleChange}
+                        className="w-full bg-white border-2 border-gray-100 rounded-2xl p-4 pl-8 text-2xl font-black text-right focus:border-amber-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3 pt-4 border-t border-gray-200">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Required Deposit</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-gray-400">$</span>
+                        <input 
+                          type="number" 
+                          name="depositAmount" 
+                          value={formData.depositAmount} 
+                          onChange={handleChange}
+                          className="w-full bg-white border border-gray-200 rounded-xl p-3 pl-7 text-lg font-black text-right focus:border-amber-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${formData.depositPaid ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'}`}>
+                        <span className="text-[9px] font-black uppercase">Dep. Paid</span>
+                        <input type="checkbox" name="depositPaid" checked={formData.depositPaid} onChange={handleChange} className="w-5 h-5 accent-green-600" />
+                      </label>
+                      <label className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${formData.balancePaid ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'}`}>
+                        <span className="text-[9px] font-black uppercase">Bal. Paid</span>
+                        <input type="checkbox" name="balancePaid" checked={formData.balancePaid} onChange={handleChange} className="w-5 h-5 accent-green-600" />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <SectionTitle>Service Directives</SectionTitle>
+                <textarea 
+                  name="notes" 
+                  placeholder="Kitchen requirements, special requests, logistics notes..." 
+                  value={formData.notes} 
+                  onChange={handleChange} 
+                  rows={4} 
+                  className="w-full bg-white border border-gray-200 rounded-xl p-3 text-xs font-medium outline-none focus:ring-2 focus:ring-amber-500" 
+                />
+              </section>
+
+              <div className="pt-4 flex flex-col gap-3">
+                <div className="flex items-center gap-3 bg-amber-600/10 p-3 rounded-xl border border-amber-600/20 mb-2">
+                  <input type="checkbox" name="contacted" checked={formData.contacted} onChange={handleChange} className="w-5 h-5 accent-amber-600" />
+                  <label className="text-[10px] font-black text-amber-900 uppercase leading-tight">Confirmed outreach to client</label>
+                </div>
+                <button type="submit" className="w-full bg-[#1a1a1a] text-amber-500 py-4 rounded-xl font-black uppercase tracking-[0.2em] text-[11px] shadow-2xl hover:bg-black transition-all transform active:scale-95">
+                  {event ? 'Update Pipeline' : 'Initialize Booking'}
+                </button>
+                <button type="button" onClick={onClose} className="text-[10px] font-black uppercase tracking-widest text-gray-400 py-2">Discard Changes</button>
               </div>
             </div>
-          </div>
-
-          <div className="flex justify-end gap-6">
-            <button type="button" onClick={onClose} className="text-[10px] font-black uppercase tracking-widest text-gray-400">Cancel</button>
-            <button type="submit" className="px-10 py-3 bg-[#1a1a1a] text-amber-500 rounded-lg font-black uppercase tracking-widest text-[11px]">Save Manifest</button>
           </div>
         </form>
       </div>
