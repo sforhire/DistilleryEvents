@@ -1,3 +1,4 @@
+
 import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import { MOCK_EVENTS } from './constants';
@@ -15,13 +16,13 @@ interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
 /**
- * ErrorBoundary class component to catch runtime errors.
- * Using Component directly from 'react' to resolve property access issues.
+ * Standard React Error Boundary component.
+ * Fix: Extended the imported 'Component' directly to ensure TypeScript correctly resolves 'state' and 'props' properties.
  */
 class ErrorBoundary extends Component<EBProps, EBState> {
   constructor(props: EBProps) {
     super(props);
-    // Initialize state to avoid "Property 'state' does not exist" errors
+    // Fix: Explicitly initializing state in constructor
     this.state = { hasError: false, error: null };
   }
 
@@ -34,22 +35,21 @@ class ErrorBoundary extends Component<EBProps, EBState> {
   }
 
   render() {
-    // Access state directly from the class instance
+    // Fix: Using this.state and this.props which are now properly inherited from Component<EBProps, EBState>
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
           <div className="max-w-xl w-full text-center">
             <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">Pipeline Failure</h1>
-            <p className="text-gray-600 mb-6 font-medium">Fatal runtime error detected.</p>
+            <p className="text-gray-600 mb-6 font-medium">The dashboard encountered a fatal runtime error.</p>
             <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 text-left overflow-auto max-h-64 shadow-2xl">
-              {this.state.error?.stack || this.state.error?.message}
+              {this.state.error?.stack || this.state.error?.message || "Unknown error"}
             </div>
             <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Reboot System</button>
           </div>
         </div>
       );
     }
-    // Access children from props as required by the error log
     return this.props.children;
   }
 }
@@ -73,8 +73,10 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     // Check initial session
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
-      console.log("Auth Status:", currentSession ? "Logged In" : "Awaiting Credentials");
       setSession(currentSession);
+      // Only stop loading if we are NOT configured for Supabase (local mode)
+      // or if we HAVE a session. If configured but no session, we stay in "loading" 
+      // until the auth check is definitive.
       setLoading(false);
     }).catch(err => {
       console.error("Auth session fetch error:", err);
@@ -82,6 +84,7 @@ const AppContent: React.FC = () => {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      console.log("Auth Event:", _event);
       setSession(newSession);
     });
 
@@ -225,11 +228,12 @@ const AppContent: React.FC = () => {
     }} />;
   }
 
-  if (loading && !session) {
+  // Defend against white screen during auth transition
+  if (loading && !session && isSupabaseConfigured) {
     return (
       <div className="h-screen bg-[#faf9f6] flex flex-col items-center justify-center space-y-4">
         <div className="w-10 h-10 border-4 border-amber-700 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Authenticating Pipeline...</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Authenticating Operations...</p>
       </div>
     );
   }
