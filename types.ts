@@ -16,15 +16,7 @@ export enum FoodServiceType {
   FULL_SERVICE = 'Full-Service'
 }
 
-export enum EventType {
-  WEDDING = 'Wedding',
-  CORPORATE = 'Corporate',
-  BIRTHDAY = 'Birthday',
-  GALA = 'Gala',
-  PRIVATE_DINING = 'Private Dining',
-  TASTING_ROOM = 'Tasting Room Takeover',
-  OTHER = 'Other'
-}
+// EventType enum removed as it's now a free-form string
 
 export interface EventRecord {
   id: string;
@@ -32,10 +24,11 @@ export interface EventRecord {
   lastName: string;
   email: string;
   phone: string;
-  eventType: EventType;
+  eventType: string; // Changed to string for free-form typing
   dateRequested: string;
-  time: string;
-  duration: number;
+  time: string;      // Start Time
+  endTime: string;   // New field for specific end time
+  duration?: number; // Kept for legacy compatibility if needed
   guests: number;
   totalAmount: number;
   depositAmount: number;
@@ -43,11 +36,11 @@ export interface EventRecord {
   balancePaid: boolean;
   contacted: boolean;
   barType: BarType;
-  beerWineOffered: boolean; // true = offered for fee, false = uncorking fee
+  beerWineOffered: boolean;
   hasFood: boolean;
   foodSource?: FoodSource;
   foodServiceType?: FoodServiceType;
-  addParking: boolean; // $500 fee
+  addParking: boolean;
   hasTasting: boolean;
   hasTour: boolean;
   notes: string;

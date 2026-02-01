@@ -18,7 +18,7 @@ const EventSheet: React.FC<EventSheetProps> = ({ event }) => {
         </div>
         <div className="text-right">
           <p className="text-2xl font-black">{event.dateRequested ? new Date(event.dateRequested).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'DATE TBD'}</p>
-          <p className="text-lg font-bold text-gray-600 uppercase tracking-tight">{formatTimeWindow(event.time, event.duration)}</p>
+          <p className="text-lg font-bold text-gray-600 uppercase tracking-tight">{formatTimeWindow(event.time, event.endTime)}</p>
         </div>
       </div>
 
@@ -37,7 +37,7 @@ const EventSheet: React.FC<EventSheetProps> = ({ event }) => {
           <p className="text-2xl font-black uppercase leading-none">{event.eventType}</p>
           <div className="mt-3">
             <p className="text-lg font-black uppercase tracking-tighter">Manifest: {event.guests} Guests</p>
-            <p className="text-sm font-bold text-gray-500 uppercase">Duration: {event.duration}H Window</p>
+            <p className="text-sm font-bold text-gray-500 uppercase">Operational Window: {event.time} - {event.endTime}</p>
           </div>
         </div>
       </div>

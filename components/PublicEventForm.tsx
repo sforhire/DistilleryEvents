@@ -1,12 +1,25 @@
 
 import React, { useState } from 'react';
-import { EventRecord, EventType, BarType, FoodSource, FoodServiceType } from '../types';
+// Fixed: Removed EventType from imports as it no longer exists in types.ts
+import { EventRecord, BarType, FoodSource, FoodServiceType } from '../types';
 import { DEFAULT_EVENT } from '../constants';
 import { generateSafeId } from '../services/utils';
 
 interface PublicEventFormProps {
   onSubmit: (event: EventRecord) => void;
 }
+
+// Define common event types locally since the global enum was removed in favor of free-form strings
+const EVENT_TYPES = [
+  'Wedding',
+  'Corporate Mixer',
+  'Tasting Room Takeover',
+  'Private Dinner',
+  'Holiday Party',
+  'Birthday',
+  'Anniversary',
+  'Other'
+];
 
 const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
   const [formData, setFormData] = useState<EventRecord>({
@@ -113,7 +126,8 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
               <div className="md:col-span-2 space-y-1.5">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">What are we celebrating?</label>
                 <select name="eventType" value={formData.eventType} onChange={handleChange} className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 focus:border-amber-500 focus:bg-white transition-all font-bold outline-none">
-                  {Object.values(EventType).map(t => <option key={t} value={t}>{t}</option>)}
+                  {/* Fixed: Use local EVENT_TYPES list instead of missing EventType enum */}
+                  {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">

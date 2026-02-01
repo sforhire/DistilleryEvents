@@ -15,9 +15,8 @@ import { formatTimeWindow } from './services/utils';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fixed: Inheriting from React.Component with explicit EBProps and EBState.
-// Added a constructor to ensure the state and props properties are properly initialized and recognized by TypeScript.
-class ErrorBoundary extends React.Component<EBProps, EBState> {
+// Fixed: Inherit from Component directly to ensure generic types are properly inferred for state and props
+class ErrorBoundary extends Component<EBProps, EBState> {
   constructor(props: EBProps) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -32,6 +31,7 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
   }
 
   render() {
+    // Fixed: Ensure state and props are accessed from 'this' within the class method
     const { hasError, error } = this.state;
     const { children } = this.props;
 
@@ -209,7 +209,7 @@ const AppContent: React.FC = () => {
           <div className="flex items-center gap-4">
             <button onClick={() => setShowEmbedModal(true)} className="bg-white/5 hover:bg-white/10 text-gray-400 px-4 py-2 rounded-lg font-black transition-all text-[10px] uppercase tracking-widest hidden md:block border border-white/5">Embed</button>
             <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg font-black shadow-xl text-[10px] uppercase tracking-widest transition-all active:scale-95">Add Booking</button>
-            {session && <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>}
+            {session && <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3 3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>}
           </div>
         </header>
 
@@ -245,7 +245,7 @@ const AppContent: React.FC = () => {
                       </td>
                       <td className="px-8 py-6">
                         <div className="text-[13px] text-gray-900 font-black">{event.dateRequested ? new Date(event.dateRequested).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'DATE TBD'}</div>
-                        <div className="text-[10px] text-gray-500 font-bold uppercase mt-1 tracking-tighter">{formatTimeWindow(event.time, event.duration)}</div>
+                        <div className="text-[10px] text-gray-500 font-bold uppercase mt-1 tracking-tighter">{formatTimeWindow(event.time, event.endTime)}</div>
                       </td>
                       <td className="px-8 py-6">
                         <div className="text-base font-black text-gray-900 tracking-tighter mb-1.5">${Number(event.totalAmount || 0).toLocaleString()}</div>

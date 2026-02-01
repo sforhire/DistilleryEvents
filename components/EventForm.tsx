@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback } from 'react';
-import { EventRecord, EventType, BarType, FoodSource, FoodServiceType } from '../types';
+import { EventRecord, BarType, FoodSource, FoodServiceType } from '../types';
 import { DEFAULT_EVENT } from '../constants';
 import { generateSafeId } from '../services/utils';
 
@@ -54,6 +54,10 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose, onDelete 
     }
   };
 
+  const toggleContacted = () => {
+    setFormData(prev => ({ ...prev, contacted: !prev.contacted }));
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     let val: any = value;
@@ -77,7 +81,7 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose, onDelete 
               {event ? 'Modify Manifest' : 'Build New Booking'}
             </h2>
             <div className="flex items-center gap-4 mt-2">
-              <span className="text-[10px] text-amber-500 font-bold uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded">OPS-PIPELINE-v2.1</span>
+              <span className="text-[10px] text-amber-500 font-bold uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded">OPS-PIPELINE-v2.5</span>
               <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest italic">ID: {formData.id.split('-')[0]}</span>
             </div>
           </div>
@@ -101,14 +105,25 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose, onDelete 
               </section>
 
               <section>
-                <SectionTitle>02. Event Timing</SectionTitle>
+                <SectionTitle>02. Manifest Categorization</SectionTitle>
                 <div className="space-y-4">
-                  <select name="eventType" value={formData.eventType} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm font-bold bg-gray-50">
-                    {Object.values(EventType).map(type => <option key={type} value={type}>{type}</option>)}
-                  </select>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">Event Classification</label>
+                    <input required name="eventType" placeholder="e.g. Wedding, Private Dinner..." value={formData.eventType} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm font-bold bg-gray-50 focus:ring-2 focus:ring-amber-500 outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">Operational Date</label>
                     <input required type="date" name="dateRequested" value={formData.dateRequested} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm outline-none" />
-                    <input required type="time" name="time" value={formData.time} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm outline-none" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">Start</label>
+                      <input required type="time" name="time" value={formData.time} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm outline-none" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">End</label>
+                      <input required type="time" name="endTime" value={formData.endTime} onChange={handleChange} className="block w-full rounded-xl border-gray-100 border p-3 text-sm outline-none" />
+                    </div>
                   </div>
                 </div>
               </section>
@@ -134,7 +149,7 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose, onDelete 
               </section>
 
               <section>
-                <SectionTitle>04. Options</SectionTitle>
+                <SectionTitle>04. Add-On Logistics</SectionTitle>
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { key: 'hasFood', label: 'Include Food' },
@@ -155,9 +170,32 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose, onDelete 
 
             <div className="space-y-8 bg-gray-50 p-8 rounded-3xl border border-gray-100">
               <section>
-                <SectionTitle>05. Financial Outlook</SectionTitle>
+                <SectionTitle>05. Administrative Outlook</SectionTitle>
                 <div className="space-y-6">
+                  {/* Contact Toggle */}
                   <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Outreach Workflow</label>
+                    <button 
+                      type="button" 
+                      onClick={toggleContacted}
+                      className={`w-full py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 border ${
+                        formData.contacted 
+                        ? 'bg-green-50 text-green-700 border-green-200 shadow-sm' 
+                        : 'bg-amber-600 text-white border-amber-500 shadow-lg hover:bg-amber-500'
+                      }`}
+                    >
+                      {formData.contacted ? (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+                          Outreach Logged
+                        </>
+                      ) : (
+                        'Contact Initiated'
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 pt-4 border-t border-gray-200">
                     <div className="flex justify-between items-center">
                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Quote Total</label>
                       <button type="button" onClick={handleApplySuggested} className="text-[8px] font-black text-amber-600 uppercase tracking-widest hover:underline">Suggest Base Pricing</button>
@@ -168,7 +206,7 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose, onDelete 
                     </div>
                   </div>
                   
-                  <div className="space-y-4 pt-4 border-t border-gray-200">
+                  <div className="space-y-4">
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Required Deposit</label>
                       <div className="relative">
@@ -193,7 +231,7 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose, onDelete 
 
               <div className="pt-4 flex flex-col gap-3">
                 <button type="submit" className="w-full bg-[#1a1a1a] text-amber-500 py-4 rounded-xl font-black uppercase tracking-[0.2em] text-[11px] shadow-2xl hover:bg-black transition-all">
-                  {event ? 'Update Record' : 'Initialize Booking'}
+                  {event ? 'Sync Manifest' : 'Initialize Booking'}
                 </button>
                 
                 {event && (
@@ -206,7 +244,7 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose, onDelete 
                   </button>
                 )}
 
-                <button type="button" onClick={onClose} className="text-[10px] font-black uppercase tracking-widest text-gray-400 py-2 hover:text-gray-600">Discard</button>
+                <button type="button" onClick={onClose} className="text-[10px] font-black uppercase tracking-widest text-gray-400 py-2 hover:text-gray-600">Discard Changes</button>
               </div>
             </div>
           </div>
