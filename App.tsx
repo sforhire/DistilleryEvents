@@ -15,11 +15,22 @@ import { formatTimeWindow } from './services/utils';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fixed: Inherit from Component directly to ensure TypeScript correctly resolves inherited properties like this.props
-class ErrorBoundary extends Component<EBProps, EBState> {
-  state: EBState = { hasError: false, error: null };
-  static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
+// Fixed: Inheriting from React.Component with explicit EBProps and EBState.
+// Added a constructor to ensure the state and props properties are properly initialized and recognized by TypeScript.
+class ErrorBoundary extends React.Component<EBProps, EBState> {
+  constructor(props: EBProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): EBState { 
+    return { hasError: true, error }; 
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
+    console.error("Pipeline Runtime Error:", error, errorInfo); 
+  }
+
   render() {
     const { hasError, error } = this.state;
     const { children } = this.props;
@@ -131,6 +142,20 @@ const AppContent: React.FC = () => {
       setShowForm(false);
       setEditingEvent(undefined);
     } catch (err: any) {}
+  };
+
+  const handleDeleteEvent = async (id: string) => {
+    try {
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.from('events').delete().eq('id', id);
+        if (error) throw error;
+      }
+      setEvents(prev => prev.filter(e => e.id !== id));
+      setShowForm(false);
+      setEditingEvent(undefined);
+    } catch (err: any) {
+      console.error("Delete failure:", err);
+    }
   };
 
   const handleOpenPrintPreview = (e: React.MouseEvent, event: EventRecord) => {
@@ -256,7 +281,14 @@ const AppContent: React.FC = () => {
             </div>
           </div>
         </main>
-        {showForm && <EventForm event={editingEvent} onSave={handleSaveEvent} onClose={() => setShowForm(false)} />}
+        {showForm && (
+          <EventForm 
+            event={editingEvent} 
+            onSave={handleSaveEvent} 
+            onDelete={handleDeleteEvent}
+            onClose={() => setShowForm(false)} 
+          />
+        )}
         {showChart && <MonthlyRevenueChart events={events} onClose={() => setShowChart(false)} />}
         {showEmbedModal && <EmbedModal onClose={() => setShowEmbedModal(false)} />}
       </div>

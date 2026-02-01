@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import { EventRecord, EventType, BarType, FoodSource, FoodServiceType } from '../types';
 import { DEFAULT_EVENT } from '../constants';
@@ -7,6 +8,7 @@ interface EventFormProps {
   event?: EventRecord;
   onSave: (event: EventRecord) => void;
   onClose: () => void;
+  onDelete?: (id: string) => void;
 }
 
 const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -15,14 +17,13 @@ const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   </h3>
 );
 
-const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
+const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose, onDelete }) => {
   const [formData, setFormData] = useState<EventRecord>(
     event || { ...DEFAULT_EVENT, id: generateSafeId() } as EventRecord
   );
 
-  // Logic to provide a suggestion without forcing it
   const calculateSuggestedTotal = useCallback(() => {
-    let total = 1000; // Base Venue Fee
+    let total = 1000;
     const guestCount = Number(formData.guests) || 0;
     total += guestCount * 25; 
     if (formData.barType === BarType.OPEN) total += guestCount * 35;
@@ -47,6 +48,12 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
     onSave(formData);
   };
 
+  const handleDelete = () => {
+    if (onDelete && event && window.confirm("Are you sure you want to permanently delete this manifest? This action cannot be undone.")) {
+      onDelete(event.id);
+    }
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     let val: any = value;
@@ -64,7 +71,6 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
     <div className="fixed inset-0 bg-[#0a0a0a]/90 backdrop-blur-xl flex items-center justify-center p-4 z-[60] no-print">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto border border-white/20">
         
-        {/* Header */}
         <div className="p-8 border-b flex justify-between items-center bg-[#1a1a1a] text-white rounded-t-3xl sticky top-0 z-20">
           <div>
             <h2 className="text-2xl font-black tracking-tighter uppercase leading-none">
@@ -81,7 +87,6 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
         <form onSubmit={handleSubmit} className="p-10">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
             
-            {/* Column 1 */}
             <div className="space-y-8">
               <section>
                 <SectionTitle>01. Client Credentials</SectionTitle>
@@ -109,7 +114,6 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
               </section>
             </div>
 
-            {/* Column 2 */}
             <div className="space-y-8">
               <section>
                 <SectionTitle>03. Service Profile</SectionTitle>
@@ -149,7 +153,6 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
               </section>
             </div>
 
-            {/* Column 3: Financials - NOW FULLY EDITABLE */}
             <div className="space-y-8 bg-gray-50 p-8 rounded-3xl border border-gray-100">
               <section>
                 <SectionTitle>05. Financial Outlook</SectionTitle>
@@ -192,7 +195,18 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose }) => {
                 <button type="submit" className="w-full bg-[#1a1a1a] text-amber-500 py-4 rounded-xl font-black uppercase tracking-[0.2em] text-[11px] shadow-2xl hover:bg-black transition-all">
                   {event ? 'Update Record' : 'Initialize Booking'}
                 </button>
-                <button type="button" onClick={onClose} className="text-[10px] font-black uppercase tracking-widest text-gray-400 py-2">Discard</button>
+                
+                {event && (
+                  <button 
+                    type="button" 
+                    onClick={handleDelete}
+                    className="w-full bg-red-50 text-red-600 border border-red-100 py-4 rounded-xl font-black uppercase tracking-[0.2em] text-[11px] hover:bg-red-600 hover:text-white transition-all active:scale-95"
+                  >
+                    Delete Manifest
+                  </button>
+                )}
+
+                <button type="button" onClick={onClose} className="text-[10px] font-black uppercase tracking-widest text-gray-400 py-2 hover:text-gray-600">Discard</button>
               </div>
             </div>
           </div>
