@@ -7,15 +7,18 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <script>
+      // Bulletproof process shim for Vercel and browser environments
       (function() {
         const env = { 
           NODE_ENV: 'production',
           SUPABASE_URL: '',
           SUPABASE_ANON_KEY: ''
         };
-        window.process = { env: env };
+        const proc = { env: env };
+        window.process = proc;
         window.env = env;
-        globalThis.process = window.process;
+        globalThis.process = proc;
+        globalThis.env = env;
       })();
     </script>
     <style>
@@ -27,8 +30,15 @@
         }
         @media print {
             .no-print { display: none !important; }
-            .print-only { display: block !important; }
+            .print-only { 
+                display: block !important; 
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+            }
             body { background-color: white !important; }
+            @page { margin: 1cm; }
         }
         .print-only { display: none; }
         ::-webkit-scrollbar { width: 6px; }
@@ -46,11 +56,11 @@
 <script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@19.0.0",
-    "react-dom": "https://esm.sh/react-dom@19.0.0",
-    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "react/": "https://esm.sh/react@19.0.0/",
-    "react-dom/": "https://esm.sh/react-dom@19.0.0/",
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "react/": "https://esm.sh/react@18.3.1/",
+    "react-dom/": "https://esm.sh/react-dom@18.3.1/",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.48.1?external=react,react-dom",
     "@google/genai": "https://esm.sh/@google/genai@^1.39.0"
   }

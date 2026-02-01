@@ -14,10 +14,14 @@ import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fixed: Explicitly using React.Component and adding a constructor to ensure 'props' are correctly typed and inherited.
-class ErrorBoundary extends React.Component<EBProps, EBState> {
+/**
+ * ErrorBoundary component to catch runtime rendering errors.
+ * Fixed: Explicitly using 'Component' from 'react' to ensure 'this.state' and 'this.props' are correctly typed.
+ */
+class ErrorBoundary extends Component<EBProps, EBState> {
   constructor(props: EBProps) {
     super(props);
+    // Fix: Initializing state within constructor, now correctly recognized via Component inheritance
     this.state = { hasError: false, error: null };
   }
 
@@ -26,20 +30,21 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Dashboard Runtime Crash:", error, errorInfo);
+    console.error("Runtime Crash:", error, errorInfo);
   }
 
   render() {
+    // Fix: 'this.state' and 'this.props' are inherited from Component<EBProps, EBState>
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
           <div className="max-w-xl w-full text-center">
-            <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">System Halted</h1>
-            <p className="text-gray-600 mb-6 font-medium">An application error was detected.</p>
+            <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">Pipeline Halted</h1>
+            <p className="text-gray-600 mb-6 font-medium">A critical rendering error was detected.</p>
             <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 text-left overflow-auto max-h-64 shadow-2xl">
               {this.state.error?.message || "Render Context Failure"}
             </div>
-            <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Reload Pipeline</button>
+            <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Reboot System</button>
           </div>
         </div>
       );
@@ -96,10 +101,14 @@ const AppContent: React.FC = () => {
     const fetchEvents = async () => {
       if (!isSupabaseConfigured) {
         setEvents(MOCK_EVENTS);
+        setLoading(false);
         return;
       }
 
-      if (!session && !isPublicView) return;
+      if (!session && !isPublicView) {
+        setLoading(false);
+        return;
+      }
       
       try {
         setLoading(true);
@@ -158,13 +167,12 @@ const AppContent: React.FC = () => {
 
   const handlePrint = (e: React.MouseEvent, event: EventRecord) => {
     e.stopPropagation();
-    // Immediate state change to trigger render of print-only component
     setPrintingEvent(event);
-    // Slight delay to allow React to commit the DOM update for the printable component
+    // Use a slightly longer timeout to ensure styles and data are committed for the print engine
     setTimeout(() => {
       window.print();
       setPrintingEvent(null);
-    }, 250);
+    }, 400);
   };
 
   const stats = useMemo(() => {
@@ -336,7 +344,9 @@ const AppContent: React.FC = () => {
         {showChart && <MonthlyRevenueChart events={events} onClose={() => setShowChart(false)} />}
         {showEmbedModal && <EmbedModal onClose={() => setShowEmbedModal(false)} />}
       </div>
-      <div className="print-only">{printingEvent && <EventSheet event={printingEvent} />}</div>
+      <div className="print-only">
+        {printingEvent && <EventSheet event={printingEvent} />}
+      </div>
     </div>
   );
 };
