@@ -15,14 +15,13 @@ import { formatTimeWindow } from './services/utils';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fixed: Explicitly using React.Component to ensure props/state are correctly typed and inherited in strict TS environments
-class ErrorBoundary extends React.Component<EBProps, EBState> {
+// Fixed: Inherit from Component directly to ensure TypeScript correctly resolves inherited properties like this.props
+class ErrorBoundary extends Component<EBProps, EBState> {
   state: EBState = { hasError: false, error: null };
   static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
   render() {
     const { hasError, error } = this.state;
-    // Fixed: Destructuring children from this.props to ensure 'props' is recognized correctly by the compiler
     const { children } = this.props;
 
     if (hasError) {
@@ -64,7 +63,7 @@ const PrintPreviewModal: React.FC<{ event: EventRecord, onClose: () => void }> =
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
               Print Manifest
             </button>
-            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors text-2xl font-black">&times;</button>
+            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors text-2xl font-black p-2">&times;</button>
           </div>
         </div>
         <div className="overflow-y-auto flex-1 bg-gray-100 p-8">
@@ -238,8 +237,16 @@ const AppContent: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-8 py-6 text-right">
-                        <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={(e) => handleOpenPrintPreview(e, event)} title="Print FOH Summary" className="p-2.5 rounded-lg bg-gray-50 hover:bg-amber-600 text-gray-400 hover:text-white transition-all shadow-sm"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg></button>
+                        <div className="flex justify-end gap-3 opacity-100 transition-opacity">
+                          <button 
+                            onClick={(e) => handleOpenPrintPreview(e, event)} 
+                            title="Print FOH Summary" 
+                            className="p-2.5 rounded-lg bg-gray-100 hover:bg-amber-600 text-gray-500 hover:text-white transition-all shadow-sm active:scale-95"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                            </svg>
+                          </button>
                         </div>
                       </td>
                     </tr>
