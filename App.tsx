@@ -15,10 +15,14 @@ import { formatTimeWindow } from './services/utils';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fixed: Inherit from Component directly to ensure generic types are properly inferred for state and props
+// Use named Component import to resolve generic type issues and fix "Property 'state'/'props' does not exist" errors
 class ErrorBoundary extends Component<EBProps, EBState> {
+  // Explicitly declare state property for TypeScript compatibility
+  state: EBState = { hasError: false, error: null };
+
   constructor(props: EBProps) {
     super(props);
+    // Initializing state in constructor as per class component standards
     this.state = { hasError: false, error: null };
   }
 
@@ -31,7 +35,7 @@ class ErrorBoundary extends Component<EBProps, EBState> {
   }
 
   render() {
-    // Fixed: Ensure state and props are accessed from 'this' within the class method
+    // Correctly accessing state and props from the Component instance
     const { hasError, error } = this.state;
     const { children } = this.props;
 
@@ -116,14 +120,34 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const fetchEvents = async () => {
-      if (!isSupabaseConfigured) { setEvents(MOCK_EVENTS); setLoading(false); return; }
-      if (!session && !isPublicView) { setLoading(false); return; }
+      // If Supabase is not configured, we strictly show MOCK data for the demo experience.
+      if (!isSupabaseConfigured) { 
+        setEvents(MOCK_EVENTS); 
+        setLoading(false); 
+        return; 
+      }
+      
+      // If Supabase IS configured, we must only show real data from the cloud.
+      if (!session && !isPublicView) { 
+        setLoading(false); 
+        return; 
+      }
+
       try {
         setLoading(true);
         const { data, error } = await supabase.from('events').select('*').order('dateRequested', { ascending: true });
         if (error) throw error;
+        
+        // Success: Set the events to the cloud data (can be empty if new DB).
         setEvents(data || []);
-      } catch (err: any) { setEvents(MOCK_EVENTS); } finally { setLoading(false); }
+      } catch (err: any) {
+        console.error("Cloud fetch error:", err);
+        // Only fallback to Mocks if we are truly stuck, but typically we want to show 
+        // the real empty state if the user has configured Supabase.
+        if (events.length === 0) setEvents([]); 
+      } finally {
+        setLoading(false);
+      }
     };
     fetchEvents();
   }, [session, isPublicView]);
@@ -179,8 +203,14 @@ const AppContent: React.FC = () => {
   const filteredEvents = useMemo(() => {
     const safeEvents = Array.isArray(events) ? events : [];
     let result = [...safeEvents].filter(Boolean);
-    if (activeFilter === 'new') result = result.filter(e => !e.contacted);
-    else if (activeFilter === 'pending_deposit') result = result.filter(e => !e.depositPaid || !e.balancePaid);
+    
+    // Logic: 'new' requests are strictly those where 'contacted' is FALSE.
+    if (activeFilter === 'new') {
+      result = result.filter(e => !e.contacted);
+    } else if (activeFilter === 'pending_deposit') {
+      result = result.filter(e => !e.depositPaid || !e.balancePaid);
+    }
+    
     return result.sort((a, b) => (new Date(a.dateRequested || 0).getTime() - new Date(b.dateRequested || 0).getTime()));
   }, [events, activeFilter]);
 
@@ -209,7 +239,7 @@ const AppContent: React.FC = () => {
           <div className="flex items-center gap-4">
             <button onClick={() => setShowEmbedModal(true)} className="bg-white/5 hover:bg-white/10 text-gray-400 px-4 py-2 rounded-lg font-black transition-all text-[10px] uppercase tracking-widest hidden md:block border border-white/5">Embed</button>
             <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg font-black shadow-xl text-[10px] uppercase tracking-widest transition-all active:scale-95">Add Booking</button>
-            {session && <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3 3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>}
+            {session && <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>}
           </div>
         </header>
 
