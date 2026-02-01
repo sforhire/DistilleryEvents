@@ -1,3 +1,4 @@
+
 import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import { MOCK_EVENTS } from './constants';
@@ -8,19 +9,17 @@ import MonthlyRevenueChart from './components/MonthlyRevenueChart';
 import PublicEventForm from './components/PublicEventForm';
 import EmbedModal from './components/EmbedModal';
 import AdminLogin from './components/AdminLogin';
-import { generateFOHBriefing } from './services/geminiService';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-/**
- * Robust ErrorBoundary component for catching dashboard runtime failures.
- * Fixed property access issues by using explicit inheritance and class property initialization.
- */
+// Fixed: Explicitly using React.Component and adding a constructor to ensure 'props' are correctly typed and inherited.
 class ErrorBoundary extends React.Component<EBProps, EBState> {
-  // Use class property for state initialization to resolve "state does not exist" errors in specific TS environments
-  state: EBState = { hasError: false, error: null };
+  constructor(props: EBProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
 
   static getDerivedStateFromError(error: Error): EBState {
     return { hasError: true, error };
@@ -35,12 +34,12 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
           <div className="max-w-xl w-full text-center">
-            <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">Pipeline Failure</h1>
-            <p className="text-gray-600 mb-6 font-medium">The dashboard encountered a fatal runtime error.</p>
+            <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">System Halted</h1>
+            <p className="text-gray-600 mb-6 font-medium">An application error was detected.</p>
             <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 text-left overflow-auto max-h-64 shadow-2xl">
-              {this.state.error?.stack || this.state.error?.message || "Internal context conflict."}
+              {this.state.error?.message || "Render Context Failure"}
             </div>
-            <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Reboot System</button>
+            <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Reload Pipeline</button>
           </div>
         </div>
       );
@@ -61,34 +60,28 @@ const AppContent: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState('all');
   const [editingEvent, setEditingEvent] = useState<EventRecord | undefined>();
   const [printingEvent, setPrintingEvent] = useState<EventRecord | null>(null);
-  const [aiBriefing, setAiBriefing] = useState<string>('');
-  const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
-    // Initial check
-    const checkSession = async () => {
+    const checkInitialAuth = async () => {
       try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
         if (mounted) {
-          setSession(currentSession);
+          setSession(initialSession);
           setLoading(false);
         }
       } catch (err) {
-        console.error("Auth init failure:", err);
         if (mounted) setLoading(false);
       }
     };
 
-    checkSession();
+    checkInitialAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      console.log("Auth State Changed:", _event);
       if (mounted) {
         setSession(newSession);
-        // Ensure loading is false when auth state changes definitively
         setLoading(false);
       }
     });
@@ -106,10 +99,7 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      // If we are in the admin dashboard path, we MUST have a session or be in public view
-      if (!session && !isPublicView) {
-        return;
-      }
+      if (!session && !isPublicView) return;
       
       try {
         setLoading(true);
@@ -122,8 +112,7 @@ const AppContent: React.FC = () => {
         setEvents(data || []);
         setDbError(null);
       } catch (err: any) {
-        console.error("Data Fetch Failure:", err);
-        setDbError("Local backup active. Cloud sync failed.");
+        setDbError("Sync Disrupted. Local mode active.");
         setEvents(MOCK_EVENTS);
       } finally {
         setLoading(false);
@@ -132,6 +121,51 @@ const AppContent: React.FC = () => {
 
     fetchEvents();
   }, [session, isPublicView]);
+
+  const handleSaveEvent = async (event: EventRecord) => {
+    try {
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.from('events').upsert(event);
+        if (error) throw error;
+      }
+      setEvents(prev => {
+        const exists = prev.some(e => e.id === event.id);
+        if (exists) {
+          return prev.map(e => e.id === event.id ? event : e);
+        }
+        return [...prev, event];
+      });
+      setShowForm(false);
+      setEditingEvent(undefined);
+    } catch (err: any) {
+      setDbError(err.message || "Failed to save booking.");
+    }
+  };
+
+  const handleDeleteEvent = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to archive this booking?")) return;
+    try {
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.from('events').delete().eq('id', id);
+        if (error) throw error;
+      }
+      setEvents(prev => prev.filter(ev => ev.id !== id));
+    } catch (err: any) {
+      setDbError(err.message || "Failed to remove record.");
+    }
+  };
+
+  const handlePrint = (e: React.MouseEvent, event: EventRecord) => {
+    e.stopPropagation();
+    // Immediate state change to trigger render of print-only component
+    setPrintingEvent(event);
+    // Slight delay to allow React to commit the DOM update for the printable component
+    setTimeout(() => {
+      window.print();
+      setPrintingEvent(null);
+    }, 250);
+  };
 
   const stats = useMemo(() => {
     const safeEvents = Array.isArray(events) ? events : [];
@@ -162,80 +196,12 @@ const AppContent: React.FC = () => {
     });
   }, [events, activeFilter]);
 
-  const handleSaveEvent = async (event: EventRecord) => {
-    if (!isSupabaseConfigured) {
-      setEvents(prev => {
-        const exists = prev.find(e => e.id === event.id);
-        if (exists) return prev.map(e => e.id === event.id ? event : e);
-        return [...prev, event];
-      });
-      setShowForm(false);
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('events')
-        .upsert(event)
-        .select();
-
-      if (error) throw error;
-      if (data && data[0]) {
-        setEvents(prev => {
-          const exists = prev.find(e => e.id === event.id);
-          if (exists) return prev.map(e => e.id === event.id ? data[0] : e);
-          return [...prev, data[0]];
-        });
-      }
-    } catch (err: any) {
-      alert('Sync error: ' + err.message);
-    }
-    setShowForm(false);
-    setEditingEvent(undefined);
-  };
-
-  const handleDeleteEvent = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (confirm('Permanently remove this booking record?')) {
-      if (!isSupabaseConfigured) {
-        setEvents(prev => prev.filter(ev => ev.id !== id));
-        return;
-      }
-      try {
-        const { error } = await supabase.from('events').delete().eq('id', id);
-        if (error) throw error;
-        setEvents(prev => prev.filter(ev => ev.id !== id));
-      } catch (err) {
-        console.error('Error deleting event:', err);
-      }
-    }
-  };
-
-  const handlePrint = async (e: React.MouseEvent, event: EventRecord) => {
-    e.stopPropagation();
-    setPrintingEvent(event);
-    setAiBriefing('');
-    setIsGeneratingBriefing(true);
-    
-    try {
-      const briefing = await generateFOHBriefing(event);
-      setAiBriefing(briefing);
-      setTimeout(() => {
-        window.print();
-        setIsGeneratingBriefing(false);
-      }, 500);
-    } catch (err) {
-      setIsGeneratingBriefing(false);
-    }
-  };
-
   if (isPublicView) {
     return <PublicEventForm onSubmit={async (e) => {
       if (isSupabaseConfigured) await supabase.from('events').insert(e);
     }} />;
   }
 
-  // Ensure loading UI is displayed only when absolutely necessary
   if (loading && !session && isSupabaseConfigured) {
     return (
       <div className="h-screen bg-[#faf9f6] flex flex-col items-center justify-center space-y-4">
@@ -280,7 +246,7 @@ const AppContent: React.FC = () => {
           {dbError && (
             <div className="mb-6 bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between shadow-sm">
               <span className="text-[10px] font-black text-amber-800 uppercase tracking-widest flex items-center gap-2">
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1-1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
                 {dbError}
               </span>
             </div>
@@ -370,18 +336,7 @@ const AppContent: React.FC = () => {
         {showChart && <MonthlyRevenueChart events={events} onClose={() => setShowChart(false)} />}
         {showEmbedModal && <EmbedModal onClose={() => setShowEmbedModal(false)} />}
       </div>
-
-      {isGeneratingBriefing && (
-        <div className="fixed inset-0 bg-[#111111]/95 backdrop-blur-2xl z-[100] flex items-center justify-center no-print">
-          <div className="text-center">
-            <div className="w-16 h-16 border-4 border-amber-600 border-t-transparent rounded-full animate-spin mx-auto mb-8 shadow-2xl"></div>
-            <h3 className="text-white text-xl font-black uppercase tracking-[0.2em]">Synthesizing AI Intelligence</h3>
-            <p className="text-amber-500/60 text-[10px] font-black uppercase tracking-widest mt-2">Connecting to Distillery Brain...</p>
-          </div>
-        </div>
-      )}
-
-      <div className="print-only">{printingEvent && <EventSheet event={printingEvent} aiBriefing={aiBriefing} />}</div>
+      <div className="print-only">{printingEvent && <EventSheet event={printingEvent} />}</div>
     </div>
   );
 };
