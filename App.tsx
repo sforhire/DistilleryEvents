@@ -14,27 +14,19 @@ import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-/**
- * ErrorBoundary component to catch runtime rendering errors.
- * Fixed: Explicitly using 'Component' from 'react' to ensure 'this.state' and 'this.props' are correctly typed.
- */
+// Fixed: Use the directly imported Component class to ensure proper generic resolution in TypeScript
 class ErrorBoundary extends Component<EBProps, EBState> {
-  constructor(props: EBProps) {
-    super(props);
-    // Fix: Initializing state within constructor, now correctly recognized via Component inheritance
-    this.state = { hasError: false, error: null };
-  }
+  state: EBState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): EBState {
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Runtime Crash:", error, errorInfo);
+    console.error("Pipeline Runtime Error:", error, errorInfo);
   }
 
   render() {
-    // Fix: 'this.state' and 'this.props' are inherited from Component<EBProps, EBState>
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
@@ -44,11 +36,12 @@ class ErrorBoundary extends Component<EBProps, EBState> {
             <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 text-left overflow-auto max-h-64 shadow-2xl">
               {this.state.error?.message || "Render Context Failure"}
             </div>
-            <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Reboot System</button>
+            <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-amber-700 transition-colors">Reboot System</button>
           </div>
         </div>
       );
     }
+    // Fixed: this.props is now correctly inherited from the Component class with EBProps generic
     return this.props.children;
   }
 }
@@ -67,9 +60,19 @@ const AppContent: React.FC = () => {
   const [printingEvent, setPrintingEvent] = useState<EventRecord | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
 
+  // Robust Printing Trigger
+  useEffect(() => {
+    if (printingEvent) {
+      const timer = setTimeout(() => {
+        window.print();
+        setPrintingEvent(null);
+      }, 300); // Give React enough time to mount the print-only EventSheet
+      return () => clearTimeout(timer);
+    }
+  }, [printingEvent]);
+
   useEffect(() => {
     let mounted = true;
-
     const checkInitialAuth = async () => {
       try {
         const { data: { session: initialSession } } = await supabase.auth.getSession();
@@ -81,7 +84,6 @@ const AppContent: React.FC = () => {
         if (mounted) setLoading(false);
       }
     };
-
     checkInitialAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
@@ -121,7 +123,7 @@ const AppContent: React.FC = () => {
         setEvents(data || []);
         setDbError(null);
       } catch (err: any) {
-        setDbError("Sync Disrupted. Local mode active.");
+        setDbError("Local fallback active.");
         setEvents(MOCK_EVENTS);
       } finally {
         setLoading(false);
@@ -147,32 +149,13 @@ const AppContent: React.FC = () => {
       setShowForm(false);
       setEditingEvent(undefined);
     } catch (err: any) {
-      setDbError(err.message || "Failed to save booking.");
-    }
-  };
-
-  const handleDeleteEvent = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (!confirm("Are you sure you want to archive this booking?")) return;
-    try {
-      if (isSupabaseConfigured) {
-        const { error } = await supabase.from('events').delete().eq('id', id);
-        if (error) throw error;
-      }
-      setEvents(prev => prev.filter(ev => ev.id !== id));
-    } catch (err: any) {
-      setDbError(err.message || "Failed to remove record.");
+      setDbError("Failed to save booking.");
     }
   };
 
   const handlePrint = (e: React.MouseEvent, event: EventRecord) => {
     e.stopPropagation();
     setPrintingEvent(event);
-    // Use a slightly longer timeout to ensure styles and data are committed for the print engine
-    setTimeout(() => {
-      window.print();
-      setPrintingEvent(null);
-    }, 400);
   };
 
   const stats = useMemo(() => {
@@ -235,7 +218,7 @@ const AppContent: React.FC = () => {
             </div>
             <div>
               <h1 className="text-xl font-black text-white tracking-tighter uppercase leading-none">Distillery<span className="text-amber-500">Events</span></h1>
-              <p className="text-[9px] text-amber-500/80 font-black tracking-[0.3em] uppercase mt-1">Global Pipeline Control</p>
+              <p className="text-[9px] text-amber-500/80 font-black tracking-[0.3em] uppercase mt-1">Operational Manifest</p>
             </div>
           </div>
           
@@ -251,15 +234,6 @@ const AppContent: React.FC = () => {
         </header>
 
         <main className="max-w-7xl mx-auto px-6 py-10">
-          {dbError && (
-            <div className="mb-6 bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between shadow-sm">
-              <span className="text-[10px] font-black text-amber-800 uppercase tracking-widest flex items-center gap-2">
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1-1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                {dbError}
-              </span>
-            </div>
-          )}
-          
           <DashboardStats 
             stats={stats} 
             activeFilter={activeFilter} 
@@ -326,8 +300,12 @@ const AppContent: React.FC = () => {
                       </td>
                       <td className="px-8 py-6 text-right">
                         <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={(e) => handlePrint(e, event)} className="text-[9px] font-black text-amber-700 uppercase tracking-widest bg-amber-50 px-4 py-2 rounded-lg hover:bg-amber-100 transition-colors">Print Order</button>
-                          <button onClick={(e) => handleDeleteEvent(e, event.id)} className="text-[9px] font-black text-red-700 uppercase tracking-widest bg-red-50 px-4 py-2 rounded-lg hover:bg-red-100 transition-colors">Archive</button>
+                          <button 
+                            onClick={(e) => handlePrint(e, event)} 
+                            className="text-[9px] font-black text-amber-700 uppercase tracking-widest bg-amber-50 px-4 py-2.5 rounded-lg hover:bg-amber-600 hover:text-white transition-all shadow-sm"
+                          >
+                            FOH Summary
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -344,6 +322,7 @@ const AppContent: React.FC = () => {
         {showChart && <MonthlyRevenueChart events={events} onClose={() => setShowChart(false)} />}
         {showEmbedModal && <EmbedModal onClose={() => setShowEmbedModal(false)} />}
       </div>
+
       <div className="print-only">
         {printingEvent && <EventSheet event={printingEvent} />}
       </div>
