@@ -12,39 +12,26 @@ import AdminLogin from './components/AdminLogin';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import { formatTimeWindow } from './services/utils';
 
+const STORAGE_KEY = 'appData_v1';
+
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Use named Component import to resolve generic type issues and fix "Property 'state'/'props' does not exist" errors
-class ErrorBoundary extends Component<EBProps, EBState> {
-  // Explicitly declare state property for TypeScript compatibility
-  state: EBState = { hasError: false, error: null };
-
+// Use React.Component to ensure props property is correctly inherited and recognized by the TypeScript compiler
+class ErrorBoundary extends React.Component<EBProps, EBState> {
   constructor(props: EBProps) {
     super(props);
-    // Initializing state in constructor as per class component standards
     this.state = { hasError: false, error: null };
   }
-
-  static getDerivedStateFromError(error: Error): EBState { 
-    return { hasError: true, error }; 
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
-    console.error("Pipeline Runtime Error:", error, errorInfo); 
-  }
-
+  static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
   render() {
-    // Correctly accessing state and props from the Component instance
     const { hasError, error } = this.state;
-    const { children } = this.props;
-
     if (hasError) {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
           <div className="max-w-xl w-full text-center">
             <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">Pipeline Halted</h1>
-            <p className="text-gray-600 mb-6 font-medium">Critical rendering error detected.</p>
             <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 text-left overflow-auto max-h-64 shadow-2xl">
               {error?.message || "Render Context Failure"}
             </div>
@@ -53,15 +40,13 @@ class ErrorBoundary extends Component<EBProps, EBState> {
         </div>
       );
     }
-    return children;
+    // Fixed: Referencing this.props.children which is now correctly resolved via inheritance
+    return this.props.children;
   }
 }
 
 const PrintPreviewModal: React.FC<{ event: EventRecord, onClose: () => void }> = ({ event, onClose }) => {
-  const handlePrint = () => {
-    window.print();
-  };
-
+  const handlePrint = () => window.print();
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 no-print">
       <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-white/20 animate-in fade-in zoom-in duration-200">
@@ -71,10 +56,7 @@ const PrintPreviewModal: React.FC<{ event: EventRecord, onClose: () => void }> =
             <p className="text-[10px] text-amber-500 font-bold uppercase tracking-[0.2em]">Operational Review Required</p>
           </div>
           <div className="flex gap-4">
-            <button 
-              onClick={handlePrint}
-              className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all shadow-lg active:scale-95"
-            >
+            <button onClick={handlePrint} className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all shadow-lg active:scale-95">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
               Print Manifest
             </button>
@@ -103,65 +85,80 @@ const AppContent: React.FC = () => {
   const [editingEvent, setEditingEvent] = useState<EventRecord | undefined>();
   const [printingEvent, setPrintingEvent] = useState<EventRecord | null>(null);
 
+  // Initial Auth Check
   useEffect(() => {
     let mounted = true;
     const checkInitialAuth = async () => {
       try {
         const { data: { session: s } } = await supabase.auth.getSession();
-        if (mounted) { setSession(s); setLoading(false); }
-      } catch (err) { if (mounted) setLoading(false); }
+        if (mounted) setSession(s);
+      } catch (err) {}
     };
     checkInitialAuth();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => {
-      if (mounted) { setSession(s); setLoading(false); }
+      if (mounted) setSession(s);
     });
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
+  // Hybrid Data Fetching Strategy
   useEffect(() => {
     const fetchEvents = async () => {
-      // If Supabase is not configured, we strictly show MOCK data for the demo experience.
-      if (!isSupabaseConfigured) { 
-        setEvents(MOCK_EVENTS); 
-        setLoading(false); 
-        return; 
-      }
-      
-      // If Supabase IS configured, we must only show real data from the cloud.
-      if (!session && !isPublicView) { 
-        setLoading(false); 
-        return; 
+      setLoading(true);
+
+      // Priority 1: Cloud Sync (If Configured)
+      if (isSupabaseConfigured && (session || isPublicView)) {
+        try {
+          const { data, error } = await supabase.from('events').select('*').order('dateRequested', { ascending: true });
+          if (!error) {
+            setEvents(data || []);
+            setLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.error("Cloud fetch failed, checking local cache...");
+        }
       }
 
-      try {
-        setLoading(true);
-        const { data, error } = await supabase.from('events').select('*').order('dateRequested', { ascending: true });
-        if (error) throw error;
-        
-        // Success: Set the events to the cloud data (can be empty if new DB).
-        setEvents(data || []);
-      } catch (err: any) {
-        console.error("Cloud fetch error:", err);
-        // Only fallback to Mocks if we are truly stuck, but typically we want to show 
-        // the real empty state if the user has configured Supabase.
-        if (events.length === 0) setEvents([]); 
-      } finally {
-        setLoading(false);
+      // Priority 2: Local Storage Cache
+      const savedData = localStorage.getItem(STORAGE_KEY);
+      if (savedData) {
+        try {
+          const parsed = JSON.parse(savedData);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setEvents(parsed);
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.error("Local parse failed.");
+        }
       }
+
+      // Priority 3: Fallback to Mock Data (First Run Only)
+      setEvents(MOCK_EVENTS);
+      setLoading(false);
     };
     fetchEvents();
   }, [session, isPublicView]);
 
+  // Debounced Local Storage Persistence
+  useEffect(() => {
+    if (loading) return;
+    const timer = setTimeout(() => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [events, loading]);
+
   const handleSaveEvent = async (event: EventRecord) => {
     try {
       if (isSupabaseConfigured) {
-        const { error } = await supabase.from('events').upsert(event);
-        if (error) throw error;
+        await supabase.from('events').upsert(event);
       }
       setEvents(prev => {
         const exists = prev.some(e => e.id === event.id);
-        if (exists) return prev.map(e => e.id === event.id ? event : e);
-        return [...prev, event];
+        return exists ? prev.map(e => e.id === event.id ? event : e) : [...prev, event];
       });
       setShowForm(false);
       setEditingEvent(undefined);
@@ -171,47 +168,35 @@ const AppContent: React.FC = () => {
   const handleDeleteEvent = async (id: string) => {
     try {
       if (isSupabaseConfigured) {
-        const { error } = await supabase.from('events').delete().eq('id', id);
-        if (error) throw error;
+        await supabase.from('events').delete().eq('id', id);
       }
       setEvents(prev => prev.filter(e => e.id !== id));
       setShowForm(false);
       setEditingEvent(undefined);
-    } catch (err: any) {
-      console.error("Delete failure:", err);
-    }
+    } catch (err: any) {}
   };
 
-  const handleOpenPrintPreview = (e: React.MouseEvent, event: EventRecord) => {
-    e.stopPropagation();
-    setPrintingEvent(event);
+  const resetToMocks = () => {
+    if (window.confirm("Restore demo environment? This will overwrite local data with the default operational manifest.")) {
+      localStorage.removeItem(STORAGE_KEY);
+      setEvents(MOCK_EVENTS);
+    }
   };
 
   const stats = useMemo(() => {
-    const safeEvents = Array.isArray(events) ? events : [];
-    return safeEvents.reduce((acc, curr) => {
-      if (!curr) return acc;
-      return {
-        totalEvents: acc.totalEvents + 1,
-        totalRevenue: acc.totalRevenue + (Number(curr.totalAmount) || 0),
-        newRequests: acc.newRequests + (curr.contacted ? 0 : 1),
-        pendingDeposits: acc.pendingDeposits + (!curr.depositPaid || !curr.balancePaid ? 1 : 0)
-      };
-    }, { totalEvents: 0, totalRevenue: 0, newRequests: 0, pendingDeposits: 0 });
+    return events.reduce((acc, curr) => ({
+      totalEvents: acc.totalEvents + 1,
+      totalRevenue: acc.totalRevenue + (Number(curr.totalAmount) || 0),
+      newRequests: acc.newRequests + (curr.contacted ? 0 : 1),
+      pendingDeposits: acc.pendingDeposits + (!curr.depositPaid || !curr.balancePaid ? 1 : 0)
+    }), { totalEvents: 0, totalRevenue: 0, newRequests: 0, pendingDeposits: 0 });
   }, [events]);
 
   const filteredEvents = useMemo(() => {
-    const safeEvents = Array.isArray(events) ? events : [];
-    let result = [...safeEvents].filter(Boolean);
-    
-    // Logic: 'new' requests are strictly those where 'contacted' is FALSE.
-    if (activeFilter === 'new') {
-      result = result.filter(e => !e.contacted);
-    } else if (activeFilter === 'pending_deposit') {
-      result = result.filter(e => !e.depositPaid || !e.balancePaid);
-    }
-    
-    return result.sort((a, b) => (new Date(a.dateRequested || 0).getTime() - new Date(b.dateRequested || 0).getTime()));
+    let result = [...events].filter(Boolean);
+    if (activeFilter === 'new') result = result.filter(e => !e.contacted);
+    else if (activeFilter === 'pending_deposit') result = result.filter(e => !e.depositPaid || !e.balancePaid);
+    return result.sort((a, b) => new Date(a.dateRequested || 0).getTime() - new Date(b.dateRequested || 0).getTime());
   }, [events, activeFilter]);
 
   if (isPublicView) return <PublicEventForm onSubmit={async (e) => { if (isSupabaseConfigured) await supabase.from('events').insert(e); }} />;
@@ -237,7 +222,7 @@ const AppContent: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={() => setShowEmbedModal(true)} className="bg-white/5 hover:bg-white/10 text-gray-400 px-4 py-2 rounded-lg font-black transition-all text-[10px] uppercase tracking-widest hidden md:block border border-white/5">Embed</button>
+            <button onClick={resetToMocks} className="bg-white/5 hover:bg-white/10 text-amber-600/60 hover:text-amber-600 px-4 py-2 rounded-lg font-black transition-all text-[10px] uppercase tracking-widest border border-amber-900/10">Reset System</button>
             <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg font-black shadow-xl text-[10px] uppercase tracking-widest transition-all active:scale-95">Add Booking</button>
             {session && <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>}
           </div>
@@ -257,7 +242,6 @@ const AppContent: React.FC = () => {
                     <th className="px-8 py-5">Client</th>
                     <th className="px-8 py-5">Date & Time</th>
                     <th className="px-8 py-5">Financial</th>
-                    <th className="px-8 py-5">Summary</th>
                     <th className="px-8 py-5 text-right">Admin</th>
                   </tr>
                 </thead>
@@ -281,50 +265,25 @@ const AppContent: React.FC = () => {
                         <div className="text-base font-black text-gray-900 tracking-tighter mb-1.5">${Number(event.totalAmount || 0).toLocaleString()}</div>
                         <div className="flex gap-1.5">
                           <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border ${event.depositPaid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>D: {event.depositPaid ? 'SETTLED' : 'PENDING'}</span>
-                          <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border ${event.balancePaid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>B: {event.balancePaid ? 'SETTLED' : 'PENDING'}</span>
-                        </div>
-                      </td>
-                      <td className="px-8 py-6">
-                        <div className="text-[10px] text-gray-500 font-black uppercase mb-1.5">{event.barType}</div>
-                        <div className="flex gap-1 flex-wrap">
-                          {event.hasFood && <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[8px] font-black border border-blue-100 uppercase">Catering</span>}
-                          {event.hasTasting && <span className="bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded text-[8px] font-black border border-purple-100 uppercase">Tasting</span>}
                         </div>
                       </td>
                       <td className="px-8 py-6 text-right">
-                        <div className="flex justify-end gap-3 opacity-100 transition-opacity">
-                          <button 
-                            onClick={(e) => handleOpenPrintPreview(e, event)} 
-                            title="Print FOH Summary" 
-                            className="p-2.5 rounded-lg bg-gray-100 hover:bg-amber-600 text-gray-500 hover:text-white transition-all shadow-sm active:scale-95"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                            </svg>
-                          </button>
-                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); setPrintingEvent(event); }} className="p-2.5 rounded-lg bg-gray-100 hover:bg-amber-600 text-gray-500 hover:text-white transition-all shadow-sm active:scale-95">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                        </button>
                       </td>
                     </tr>
-                  )) : (<tr><td colSpan={5} className="px-8 py-32 text-center text-gray-300 uppercase font-black tracking-[0.3em] text-xs">No entries found</td></tr>)}
+                  )) : (<tr><td colSpan={4} className="px-8 py-32 text-center text-gray-300 uppercase font-black tracking-[0.3em] text-xs">No entries found</td></tr>)}
                 </tbody>
               </table>
             </div>
           </div>
         </main>
-        {showForm && (
-          <EventForm 
-            event={editingEvent} 
-            onSave={handleSaveEvent} 
-            onDelete={handleDeleteEvent}
-            onClose={() => setShowForm(false)} 
-          />
-        )}
+        {showForm && <EventForm event={editingEvent} onSave={handleSaveEvent} onDelete={handleDeleteEvent} onClose={() => setShowForm(false)} />}
         {showChart && <MonthlyRevenueChart events={events} onClose={() => setShowChart(false)} />}
         {showEmbedModal && <EmbedModal onClose={() => setShowEmbedModal(false)} />}
       </div>
-      <div className="print-only">
-        {printingEvent && <EventSheet event={printingEvent} />}
-      </div>
+      <div className="print-only">{printingEvent && <EventSheet event={printingEvent} />}</div>
       {printingEvent && <PrintPreviewModal event={printingEvent} onClose={() => setPrintingEvent(null)} />}
     </div>
   );
