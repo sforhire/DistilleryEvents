@@ -1,25 +1,35 @@
+
 /**
  * Safely retrieves environment variables across different browser/node environments.
  */
 export const getEnv = (key: string): string | undefined => {
   try {
-    // 1. Check for platform-injected process.env (common in polyfilled or node-like envs)
     if (typeof process !== 'undefined' && process.env && process.env[key]) {
       return process.env[key];
     }
-
-    // 2. Check window/globalThis properties
     const win = (typeof window !== 'undefined' ? window : globalThis) as any;
-    
-    // Check standard locations
     if (win.process?.env?.[key]) return win.process.env[key];
     if (win.env?.[key]) return win.env[key];
     if (win.ENV?.[key]) return win.ENV[key];
-    
-    // Check if variables are at the top level of window (some simple injectors do this)
     if (win[key]) return win[key];
   } catch (e) {}
   return undefined;
+};
+
+/**
+ * Combines a date (YYYY-MM-DD) and time (HH:MM) into a full ISO string.
+ * Defaults to current timezone.
+ */
+export const combineDateTimeToISO = (dateStr: string, timeStr: string): string => {
+  if (!dateStr || !timeStr) return new Date().toISOString();
+  try {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const date = new Date(year, month - 1, day, hours, minutes);
+    return date.toISOString();
+  } catch (e) {
+    return new Date().toISOString();
+  }
 };
 
 /**

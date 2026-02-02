@@ -9,30 +9,18 @@ import PublicEventForm from './components/PublicEventForm';
 import EmbedModal from './components/EmbedModal';
 import { supabase, isSupabaseConfigured, MISSING_VARS_ERROR } from './services/supabaseClient';
 import { formatTimeWindow } from './services/utils';
+import { pushEventToCalendar } from './services/calendarService';
 
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-/**
- * Standard Error Boundary to catch UI crashes.
- * Fix: Changed React.Component to Component and ensured standard inheritance patterns.
- */
-class ErrorBoundary extends Component<EBProps, EBState> {
-  // Fix for line 21, 33, 39: Explicitly define the state property for TS clarity
-  public override state: EBState = { hasError: false, error: null };
-
-  constructor(props: EBProps) {
-    super(props);
-  }
-
-  static getDerivedStateFromError(error: Error): EBState { 
-    return { hasError: true, error }; 
-  }
-  
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
-    console.error("Pipeline Runtime Error:", error, errorInfo); 
-  }
-  
+// Fixed: Explicitly using React.Component and removing override keyword to ensure inheritance is correctly recognized by the compiler
+class ErrorBoundary extends React.Component<EBProps, EBState> {
+  // Fixed: Removed override modifier to resolve "class does not extend another class" error
+  public state: EBState = { hasError: false, error: null };
+  constructor(props: EBProps) { super(props); }
+  static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
   render() {
     if (this.state.hasError) {
       return (
@@ -47,10 +35,60 @@ class ErrorBoundary extends Component<EBProps, EBState> {
         </div>
       );
     }
-    // Fix for line 46: this.props.children is now correctly typed via Component inheritance
+    // Fixed: this.props is now accessible as the inheritance is correctly established
     return this.props.children;
   }
 }
+
+/**
+ * Calendar Sync Interaction Component
+ */
+const CalendarSyncButton: React.FC<{ event: EventRecord; onUpdate: (e: EventRecord) => void }> = ({ event, onUpdate }) => {
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>(event.pushedToCalendar ? 'success' : 'idle');
+
+  const handleSync = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (status === 'loading' || status === 'success') return;
+    
+    setStatus('loading');
+    const result = await pushEventToCalendar(event);
+    
+    if (result.success) {
+      setStatus('success');
+      onUpdate({
+        ...event,
+        pushedToCalendar: true,
+        calendarPushedAt: new Date().toISOString(),
+        googleEventId: result.googleEventId
+      });
+    } else {
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 3000);
+    }
+  };
+
+  return (
+    <button 
+      onClick={handleSync}
+      title={status === 'success' ? `Synced on ${new Date(event.calendarPushedAt!).toLocaleDateString()}` : "Sync to G-Cal"}
+      className={`p-2.5 rounded-lg transition-all shadow-sm active:scale-95 flex items-center justify-center ${
+        status === 'success' ? 'bg-green-100 text-green-700' : 
+        status === 'error' ? 'bg-red-100 text-red-600' :
+        'bg-gray-100 text-gray-500 hover:bg-amber-100 hover:text-amber-700'
+      }`}
+    >
+      {status === 'loading' ? (
+        <div className="w-5 h-5 border-2 border-amber-600/20 border-t-amber-600 rounded-full animate-spin"></div>
+      ) : status === 'success' ? (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+      ) : status === 'error' ? (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+      ) : (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+      )}
+    </button>
+  );
+};
 
 const PrintPreviewModal: React.FC<{ event: EventRecord; onClose: () => void }> = ({ event, onClose }) => (
   <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 no-print">
@@ -79,11 +117,7 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const hydratePipeline = async () => {
-      if (!isSupabaseConfigured) {
-        setLoading(false);
-        return;
-      }
-
+      if (!isSupabaseConfigured) { setLoading(false); return; }
       setLoading(true);
       try {
         const { data, error } = await supabase.from('events').select('*').order('dateRequested', { ascending: true });
@@ -92,27 +126,24 @@ const AppContent: React.FC = () => {
       } catch (err: any) {
         console.error("❌ Cloud fetch failed:", err.message);
         setEvents([]);
-      } finally {
-        setLoading(false);
-      }
+      } finally { setLoading(false); }
     };
     hydratePipeline();
   }, [isPublicView]);
 
+  const handleUpdateLocalEvent = (updatedEvent: EventRecord) => {
+    setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
+  };
+
   const handleSaveEvent = async (event: EventRecord) => {
     try {
-      if (!isSupabaseConfigured) {
-        throw new Error(MISSING_VARS_ERROR);
-      }
-
+      if (!isSupabaseConfigured) throw new Error(MISSING_VARS_ERROR);
       const { error } = await supabase.from('events').upsert(event);
       if (error) throw error;
-
       setEvents(prev => {
         const exists = prev.some(e => e.id === event.id);
         return exists ? prev.map(e => e.id === event.id ? event : e) : [...prev, event];
       });
-
       setShowForm(false);
       setEditingEvent(undefined);
     } catch (err: any) {
@@ -235,7 +266,10 @@ const AppContent: React.FC = () => {
                         </p>
                       </td>
                       <td className="px-8 py-6 text-right">
-                        <button onClick={(e) => { e.stopPropagation(); setPrintingEvent(event); }} className="p-2.5 rounded-lg bg-gray-100 hover:bg-amber-600 text-gray-500 hover:text-white transition-all shadow-sm active:scale-95"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg></button>
+                        <div className="flex justify-end gap-2">
+                          <CalendarSyncButton event={event} onUpdate={handleUpdateLocalEvent} />
+                          <button onClick={(e) => { e.stopPropagation(); setPrintingEvent(event); }} className="p-2.5 rounded-lg bg-gray-100 hover:bg-amber-600 text-gray-500 hover:text-white transition-all shadow-sm active:scale-95"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg></button>
+                        </div>
                       </td>
                     </tr>
                   )) : (<tr><td colSpan={6} className="px-8 py-32 text-center text-gray-300 uppercase font-black tracking-[0.3em] text-xs">No entries found</td></tr>)}

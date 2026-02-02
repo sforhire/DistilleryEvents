@@ -16,19 +16,16 @@ export enum FoodServiceType {
   FULL_SERVICE = 'Full-Service'
 }
 
-// EventType enum removed as it's now a free-form string
-
 export interface EventRecord {
   id: string;
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
-  eventType: string; // Changed to string for free-form typing
+  eventType: string;
   dateRequested: string;
-  time: string;      // Start Time
-  endTime: string;   // New field for specific end time
-  duration?: number; // Kept for legacy compatibility if needed
+  time: string;      
+  endTime: string;   
   guests: number;
   totalAmount: number;
   depositAmount: number;
@@ -44,6 +41,10 @@ export interface EventRecord {
   hasTasting: boolean;
   hasTour: boolean;
   notes: string;
+  // Sync Status
+  pushedToCalendar?: boolean;
+  calendarPushedAt?: string;
+  googleEventId?: string;
 }
 
 export interface DashboardStats {
