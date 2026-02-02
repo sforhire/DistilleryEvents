@@ -1,6 +1,5 @@
 
 import React, { useState } from 'react';
-// Fixed: Removed EventType from imports as it no longer exists in types.ts
 import { EventRecord, BarType, FoodSource, FoodServiceType } from '../types';
 import { DEFAULT_EVENT } from '../constants';
 import { generateSafeId } from '../services/utils';
@@ -9,7 +8,6 @@ interface PublicEventFormProps {
   onSubmit: (event: EventRecord) => void;
 }
 
-// Define common event types locally since the global enum was removed in favor of free-form strings
 const EVENT_TYPES = [
   'Wedding',
   'Corporate Mixer',
@@ -32,7 +30,7 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
     dateRequested: '',
     time: '',
     notes: '',
-    contacted: false,
+    contacted: false, // Explicitly false for new contacts
     depositPaid: false,
     balancePaid: false,
   } as EventRecord);
@@ -57,6 +55,7 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
+      // Passes to App.tsx handleSaveEvent which routes to 'contact' table
       await onSubmit(formData);
       setSubmitted(true);
     } catch (err) {
@@ -126,7 +125,6 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
               <div className="md:col-span-2 space-y-1.5">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">What are we celebrating?</label>
                 <select name="eventType" value={formData.eventType} onChange={handleChange} className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 focus:border-amber-500 focus:bg-white transition-all font-bold outline-none">
-                  {/* Fixed: Use local EVENT_TYPES list instead of missing EventType enum */}
                   {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
@@ -145,8 +143,8 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
                 <input required type="time" name="time" value={formData.time} onChange={handleChange} className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 focus:border-amber-500 focus:bg-white transition-all font-bold outline-none" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Duration (Hours)</label>
-                <input required type="number" step="0.5" name="duration" value={formData.duration} onChange={handleChange} className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 focus:border-amber-500 focus:bg-white transition-all font-bold text-center outline-none" />
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">End Time</label>
+                <input required type="time" name="endTime" value={formData.endTime} onChange={handleChange} className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 focus:border-amber-500 focus:bg-white transition-all font-bold text-center outline-none" />
               </div>
             </div>
           </section>

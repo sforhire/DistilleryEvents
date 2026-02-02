@@ -17,8 +17,8 @@ const STORAGE_KEY = 'appData_v1';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fixed: Explicitly extend React.Component and ensure state is properly initialized to satisfy TS
-class ErrorBoundary extends React.Component<EBProps, EBState> {
+// Fixed: ErrorBoundary now extends the imported Component to resolve state and props context issues correctly in TypeScript
+class ErrorBoundary extends Component<EBProps, EBState> {
   constructor(props: EBProps) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -33,7 +33,6 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
   }
 
   render() {
-    // Fixed: State and props now correctly recognized from React.Component inheritance
     const { hasError, error } = this.state;
     if (hasError) {
       return (
@@ -108,52 +107,53 @@ const AppContent: React.FC = () => {
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
-  // Hybrid Data Hydration Strategy
+  // Canonical Table Strategy: Fetch from both 'contact' (leads) and 'pipeline' (managed events)
   useEffect(() => {
     const hydratePipeline = async () => {
       setLoading(true);
 
-      // Priority 1: Cloud (Supabase) - ABSOLUTE TRUTH
       if (isSupabaseConfigured && (session || isPublicView)) {
         try {
-          const { data, error } = await supabase.from('events').select('*').order('dateRequested', { ascending: true });
-          if (!error) {
-            console.info("⚡ Cloud hydration successful.");
-            setEvents(data || []);
+          console.info("⚡ Syncing from Cloud: contact & pipeline tables...");
+          const [contactRes, pipelineRes] = await Promise.all([
+            supabase.from('contact').select('*'),
+            supabase.from('pipeline').select('*')
+          ]);
+
+          if (!contactRes.error && !pipelineRes.error) {
+            const merged = [...(contactRes.data || []), ...(pipelineRes.data || [])];
+            setEvents(merged);
             setLoading(false);
             return;
           }
-          console.error("Cloud fetch error:", error.message);
+          console.error("Supabase fetch failed", contactRes.error || pipelineRes.error);
         } catch (err) {
-          console.error("Cloud connection failure:", err);
+          console.error("Cloud hydration error:", err);
         }
       }
 
-      // Priority 2: Local Storage (Cache only if Cloud is unreachable)
-      const savedData = localStorage.getItem(STORAGE_KEY);
-      if (savedData) {
+      // Fallback to local storage if cloud is unavailable
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
         try {
-          const parsed = JSON.parse(savedData);
+          const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            console.info("📂 Cache hydration active.");
             setEvents(parsed);
             setLoading(false);
             return;
           }
-        } catch (e) {
-          console.error("Cache parsing failure.");
-        }
+        } catch (e) {}
       }
 
-      // Priority 3: Mock Data (Only if First-Run and empty)
-      console.warn("USING MOCK DATA - Supabase empty or seeding enabled");
+      // Final fallback to mock data
+      console.warn("USING MOCK DATA - Remote tables empty or unreachable");
       setEvents(MOCK_EVENTS);
       setLoading(false);
     };
     hydratePipeline();
   }, [session, isPublicView]);
 
-  // Debounced Local Cache Sync
+  // Sync state to local storage for offline resilience
   useEffect(() => {
     if (loading) return;
     const timer = setTimeout(() => {
@@ -164,48 +164,64 @@ const AppContent: React.FC = () => {
 
   const handleSaveEvent = async (event: EventRecord) => {
     try {
-      // Optimistic update of UI
+      // Optimistic state update
       setEvents(prev => {
         const exists = prev.some(e => e.id === event.id);
         return exists ? prev.map(e => e.id === event.id ? event : e) : [...prev, event];
       });
 
-      // Persistent write to Cloud
       if (isSupabaseConfigured) {
-        const { error } = await supabase.from('events').upsert(event);
-        if (error) throw error;
+        /**
+         * Operational Logic: 
+         * 1. If 'contacted' is TRUE, the record belongs in 'pipeline'.
+         * 2. If 'contacted' is FALSE, it belongs in 'contact'.
+         * 3. We use upsert to create/update and explicitly delete from the "wrong" table if it moved.
+         */
+        if (event.contacted) {
+          // Record is now managed: Move to pipeline, remove from contact
+          await Promise.all([
+            supabase.from('pipeline').upsert(event),
+            supabase.from('contact').delete().eq('id', event.id)
+          ]);
+        } else {
+          // Record is still a lead: Store in contact
+          await supabase.from('contact').upsert(event);
+        }
+        console.info(`Record ${event.id} synchronized with cloud.`);
       }
 
       setShowForm(false);
       setEditingEvent(undefined);
     } catch (err: any) {
-      alert(`Critical Save Failure: ${err.message || err}`);
+      console.error("Save failure:", err);
+      alert(`Persistence Error: ${err.message || 'Check database connection'}`);
     }
   };
 
   const handleDeleteEvent = async (id: string) => {
+    if (!window.confirm("Confirm permanent removal from both contact and pipeline stores?")) return;
+    
     try {
-      // UI Update
       setEvents(prev => prev.filter(e => e.id !== id));
 
-      // Cloud deletion
       if (isSupabaseConfigured) {
-        const { error } = await supabase.from('events').delete().eq('id', id);
-        if (error) throw error;
+        await Promise.all([
+          supabase.from('contact').delete().eq('id', id),
+          supabase.from('pipeline').delete().eq('id', id)
+        ]);
       }
 
       setShowForm(false);
       setEditingEvent(undefined);
     } catch (err: any) {
-      alert(`Deletion Error: ${err.message || err}`);
+      console.error("Delete failure:", err);
     }
   };
 
   const resetToMocks = () => {
-    if (window.confirm("Restore demo environment? This clears local cache but does NOT delete cloud data unless you manually save over it.")) {
+    if (window.confirm("Overwrite current data with demo manifest?")) {
       localStorage.removeItem(STORAGE_KEY);
       setEvents(MOCK_EVENTS);
-      console.warn("USING MOCK DATA - Manual reset triggered");
     }
   };
 
@@ -227,11 +243,10 @@ const AppContent: React.FC = () => {
 
   if (isPublicView) return <PublicEventForm onSubmit={handleSaveEvent} />;
   
-  // Loading screen prevents mock data flash
   if (loading && !session && isSupabaseConfigured) return (
     <div className="h-screen bg-[#faf9f6] flex flex-col items-center justify-center space-y-4">
       <div className="w-10 h-10 border-4 border-amber-700 border-t-transparent rounded-full animate-spin"></div>
-      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Syncing Engine...</p>
+      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Loading Cloud Data...</p>
     </div>
   );
 
@@ -251,7 +266,7 @@ const AppContent: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={() => setShowEmbedModal(true)} className="text-gray-400 hover:text-white transition-colors p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg></button>
+            <button onClick={() => setShowEmbedModal(true)} title="Embed Form" className="text-gray-400 hover:text-white transition-colors p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg></button>
             <button onClick={resetToMocks} className="bg-white/5 hover:bg-white/10 text-amber-600/60 hover:text-amber-600 px-4 py-2 rounded-lg font-black transition-all text-[10px] uppercase tracking-widest border border-amber-900/10">Reset Demo</button>
             <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg font-black shadow-xl text-[10px] uppercase tracking-widest transition-all active:scale-95">Add Booking</button>
             {session && <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>}
