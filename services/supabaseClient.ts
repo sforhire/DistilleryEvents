@@ -1,7 +1,7 @@
+
 import { createClient } from '@supabase/supabase-js';
 import { getEnv } from './utils';
 
-// Prioritize platform injected env vars or window.process mocks
 const supabaseUrl = getEnv('SUPABASE_URL');
 const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
 
@@ -18,21 +18,19 @@ let clientInstance: any = null;
 if (isSupabaseConfigured) {
   try {
     clientInstance = createClient(supabaseUrl!, supabaseAnonKey!);
-    console.info("⚡ DistilleryEvents: Cloud sync active.");
+    console.info("⚡ DistilleryEvents: Cloud Link Active.");
   } catch (e) {
     console.error("Supabase Init Error:", e);
   }
+} else {
+  console.warn("⚠️ DistilleryEvents: Supabase Keys missing. Inquiries will not be saved.");
 }
 
-/**
- * Resilient proxy ensures UI doesn't crash if keys are missing.
- * Re-initializing the proxy to be extra robust for React renders.
- */
 export const supabase = clientInstance || {
   auth: { 
     getSession: async () => ({ data: { session: null }, error: null }), 
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-    signInWithPassword: async () => ({ data: { session: null }, error: { message: "Cloud sync keys missing in Vercel. Switch to local mode." } }),
+    signInWithPassword: async () => ({ data: { session: null }, error: { message: "Cloud sync keys missing. Check environment variables." } }),
     signOut: async () => ({ error: null }),
     getUser: async () => ({ data: { user: null }, error: null })
   },
@@ -46,7 +44,3 @@ export const supabase = clientInstance || {
     delete: () => ({ eq: () => Promise.resolve({ data: [], error: null }) })
   })
 } as any;
-
-if (!clientInstance) {
-  console.info("DistilleryEvents: Cloud keys missing. Falling back to internal manifest.");
-}

@@ -14,69 +14,50 @@ import { formatTimeWindow } from './services/utils';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-/**
- * Fixed ErrorBoundary by using React.Component and explicitly declaring the state property.
- * This resolves TypeScript errors where 'state' and 'props' were not correctly inherited.
- */
 class ErrorBoundary extends React.Component<EBProps, EBState> {
+  // Explicitly defining state and constructor to resolve inheritance-based property access issues in TS environments
   public state: EBState = { hasError: false, error: null };
 
   constructor(props: EBProps) {
     super(props);
   }
 
-  static getDerivedStateFromError(error: Error): EBState { 
-    return { hasError: true, error }; 
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
-    console.error("Pipeline Runtime Error:", error, errorInfo); 
-  }
-
+  static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
+  
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
+  
   render() {
-    const { hasError, error } = this.state;
-    if (hasError) {
+    if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
           <div className="max-w-xl w-full text-center">
-            <h1 className="text-3xl font-black text-red-600 uppercase tracking-tighter mb-4">Pipeline Halted</h1>
+            <h1 className="text-3xl font-black text-red-600 uppercase mb-4">Pipeline Halted</h1>
             <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 text-left overflow-auto max-h-64 shadow-2xl">
-              {error?.message || "Render Context Failure"}
+              {this.state.error?.message || "Render Context Failure"}
             </div>
-            <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-amber-700 transition-colors">Reboot System</button>
+            <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase text-xs hover:bg-amber-700 transition-colors">Reboot System</button>
           </div>
         </div>
       );
     }
+    // Using this.props.children which is inherited from React.Component<EBProps, EBState>
     return this.props.children;
   }
 }
 
-const PrintPreviewModal: React.FC<{ event: EventRecord; onClose: () => void }> = ({ event, onClose }) => {
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 no-print">
-      <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative shadow-2xl">
-        <div className="sticky top-0 right-0 p-6 flex justify-end z-10 bg-white/80 backdrop-blur-md border-b">
-          <div className="flex gap-4">
-            <button 
-              onClick={() => window.print()} 
-              className="bg-amber-600 text-white px-6 py-2 rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg hover:bg-amber-500 transition-all"
-            >
-              Print Manifest
-            </button>
-            <button 
-              onClick={onClose} 
-              className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-2xl hover:bg-gray-200 transition-all"
-            >
-              &times;
-            </button>
-          </div>
+const PrintPreviewModal: React.FC<{ event: EventRecord; onClose: () => void }> = ({ event, onClose }) => (
+  <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 no-print">
+    <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative shadow-2xl">
+      <div className="sticky top-0 right-0 p-6 flex justify-end z-10 bg-white/80 backdrop-blur-md border-b">
+        <div className="flex gap-4">
+          <button onClick={() => window.print()} className="bg-amber-600 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] shadow-lg hover:bg-amber-500">Print Manifest</button>
+          <button onClick={onClose} className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-2xl">&times;</button>
         </div>
-        <EventSheet event={event} />
       </div>
+      <EventSheet event={event} />
     </div>
-  );
-};
+  </div>
+);
 
 const AppContent: React.FC = () => {
   const isPublicView = new URLSearchParams(window.location.search).get('view') === 'public';
@@ -99,61 +80,46 @@ const AppContent: React.FC = () => {
       } catch (err) {}
     };
     checkInitialAuth();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => {
-      if (mounted) setSession(s);
-    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => { if (mounted) setSession(s); });
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
-  // Sync Source of Truth: Supabase ONLY
   useEffect(() => {
     const hydratePipeline = async () => {
-      // For public view, we don't need a session to insert, but we might want to check if configured
       if (!isSupabaseConfigured) {
         setLoading(false);
         return;
       }
-      
-      // Admin view requires session
       if (!session && !isPublicView) {
         setLoading(false);
         return;
       }
 
       setLoading(true);
-      console.info("⚡ Synchronizing with Supabase: Fetching canonical manifest...");
+      console.info("⚡ Fetching canonical manifest from Supabase...");
 
       try {
-        const { data, error } = await supabase
-          .from('events')
-          .select('*')
-          .order('dateRequested', { ascending: true });
-
+        const { data, error } = await supabase.from('events').select('*').order('dateRequested', { ascending: true });
         if (error) throw error;
-
-        console.info(`✅ Cloud sync complete. Loaded ${data?.length || 0} records.`);
         setEvents(data || []);
       } catch (err: any) {
         console.error("❌ Cloud fetch failed:", err.message);
-        // Explicitly set empty so we don't show mock data
         setEvents([]);
       } finally {
         setLoading(false);
       }
     };
-
     hydratePipeline();
   }, [session, isPublicView]);
 
   const handleSaveEvent = async (event: EventRecord) => {
     try {
-      if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
+      if (!isSupabaseConfigured) throw new Error("Environment configuration missing (SUPABASE_URL / ANON_KEY)");
 
-      console.info(`💾 Persisting record to 'events' table...`);
+      console.info(`💾 Upserting record ${event.id} to 'events' table...`);
       const { error } = await supabase.from('events').upsert(event);
       if (error) throw error;
 
-      // Update UI state only after successful cloud write
       setEvents(prev => {
         const exists = prev.some(e => e.id === event.id);
         return exists ? prev.map(e => e.id === event.id ? event : e) : [...prev, event];
@@ -163,17 +129,15 @@ const AppContent: React.FC = () => {
       setEditingEvent(undefined);
     } catch (err: any) {
       console.error("Save failure:", err);
-      alert(`Critical Persistence Failure: ${err.message}`);
+      alert(`Persistence Failure: ${err.message}`);
     }
   };
 
   const handleDeleteEvent = async (id: string) => {
-    if (!window.confirm("Confirm permanent removal from the 'events' cloud store?")) return;
-    
+    if (!window.confirm("Confirm permanent removal from cloud store?")) return;
     try {
       const { error } = await supabase.from('events').delete().eq('id', id);
       if (error) throw error;
-
       setEvents(prev => prev.filter(e => e.id !== id));
       setShowForm(false);
       setEditingEvent(undefined);
@@ -204,9 +168,7 @@ const AppContent: React.FC = () => {
   if (loading && session) return (
     <div className="h-screen bg-[#faf9f6] flex flex-col items-center justify-center space-y-4">
       <div className="w-12 h-12 border-[6px] border-amber-700/20 border-t-amber-700 rounded-full animate-spin"></div>
-      <div className="text-center">
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-900/60">Establishing Cloud Link</p>
-      </div>
+      <p className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-900/60">Synchronizing Manifest</p>
     </div>
   );
 
@@ -226,10 +188,8 @@ const AppContent: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={() => setShowEmbedModal(true)} title="Embed Form" className="text-gray-400 hover:text-white transition-colors p-2">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
-            </button>
-            <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg font-black shadow-xl text-[10px] uppercase tracking-widest transition-all active:scale-95">Add Booking</button>
+            <button onClick={() => setShowEmbedModal(true)} title="Embed Form" className="text-gray-400 hover:text-white transition-colors p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg></button>
+            <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg font-black shadow-xl text-[10px] uppercase tracking-widest transition-all">Add Booking</button>
             {session && <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>}
           </div>
         </header>
@@ -269,14 +229,10 @@ const AppContent: React.FC = () => {
                       </td>
                       <td className="px-8 py-6">
                         <div className="text-base font-black text-gray-900 tracking-tighter mb-1.5">${Number(event.totalAmount || 0).toLocaleString()}</div>
-                        <div className="flex gap-1.5">
-                          <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border ${event.depositPaid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>D: {event.depositPaid ? 'SETTLED' : 'PENDING'}</span>
-                        </div>
+                        <div className="flex gap-1.5"><span className={`text-[8px] font-black px-2 py-0.5 rounded-full border ${event.depositPaid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>D: {event.depositPaid ? 'SETTLED' : 'PENDING'}</span></div>
                       </td>
                       <td className="px-8 py-6 text-right">
-                        <button onClick={(e) => { e.stopPropagation(); setPrintingEvent(event); }} className="p-2.5 rounded-lg bg-gray-100 hover:bg-amber-600 text-gray-500 hover:text-white transition-all shadow-sm active:scale-95">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); setPrintingEvent(event); }} className="p-2.5 rounded-lg bg-gray-100 hover:bg-amber-600 text-gray-500 hover:text-white transition-all shadow-sm active:scale-95"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg></button>
                       </td>
                     </tr>
                   )) : (<tr><td colSpan={4} className="px-8 py-32 text-center text-gray-300 uppercase font-black tracking-[0.3em] text-xs">No entries found</td></tr>)}
