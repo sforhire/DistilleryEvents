@@ -1,7 +1,6 @@
 
-import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
+import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
-import { MOCK_EVENTS } from './constants';
 import EventForm from './components/EventForm';
 import DashboardStats from './components/DashboardStats';
 import EventSheet from './components/EventSheet';
@@ -12,16 +11,18 @@ import AdminLogin from './components/AdminLogin';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import { formatTimeWindow } from './services/utils';
 
-const STORAGE_KEY = 'appData_v1';
-
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fix ErrorBoundary typing errors by using the explicitly imported Component class
-class ErrorBoundary extends Component<EBProps, EBState> {
+/**
+ * Fixed ErrorBoundary by using React.Component and explicitly declaring the state property.
+ * This resolves TypeScript errors where 'state' and 'props' were not correctly inherited.
+ */
+class ErrorBoundary extends React.Component<EBProps, EBState> {
+  public state: EBState = { hasError: false, error: null };
+
   constructor(props: EBProps) {
     super(props);
-    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError(error: Error): EBState { 
@@ -51,7 +52,6 @@ class ErrorBoundary extends Component<EBProps, EBState> {
   }
 }
 
-// Fix: Implement missing PrintPreviewModal component
 const PrintPreviewModal: React.FC<{ event: EventRecord; onClose: () => void }> = ({ event, onClose }) => {
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 no-print">
@@ -90,7 +90,6 @@ const AppContent: React.FC = () => {
   const [editingEvent, setEditingEvent] = useState<EventRecord | undefined>();
   const [printingEvent, setPrintingEvent] = useState<EventRecord | null>(null);
 
-  // Initial Auth Session Check
   useEffect(() => {
     let mounted = true;
     const checkInitialAuth = async () => {
@@ -106,11 +105,17 @@ const AppContent: React.FC = () => {
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
-  // Canonical Hydration: Supabase is Source of Truth
+  // Sync Source of Truth: Supabase ONLY
   useEffect(() => {
     const hydratePipeline = async () => {
-      // Don't try to fetch if we're not logged in (unless public view)
-      if (isSupabaseConfigured && !session && !isPublicView) {
+      // For public view, we don't need a session to insert, but we might want to check if configured
+      if (!isSupabaseConfigured) {
+        setLoading(false);
+        return;
+      }
+      
+      // Admin view requires session
+      if (!session && !isPublicView) {
         setLoading(false);
         return;
       }
@@ -119,49 +124,22 @@ const AppContent: React.FC = () => {
       console.info("⚡ Synchronizing with Supabase: Fetching canonical manifest...");
 
       try {
-        // Parallel fetch for 'contact' leads and 'pipeline' managed events
-        const [contactRes, pipelineRes] = await Promise.all([
-          supabase.from('contact').select('*'),
-          supabase.from('pipeline').select('*')
-        ]);
+        const { data, error } = await supabase
+          .from('events')
+          .select('*')
+          .order('dateRequested', { ascending: true });
 
-        if (contactRes.error) throw contactRes.error;
-        if (pipelineRes.error) throw pipelineRes.error;
+        if (error) throw error;
 
-        const merged = [...(contactRes.data || []), ...(pipelineRes.data || [])];
-        
-        if (merged.length > 0) {
-          console.info(`✅ Cloud sync complete. Loaded ${merged.length} records.`);
-          setEvents(merged);
-          // Sync cache for offline/low-connectivity speedup
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-          setLoading(false);
-          return;
-        } else {
-          console.info("☁️ Cloud manifest empty.");
-        }
+        console.info(`✅ Cloud sync complete. Loaded ${data?.length || 0} records.`);
+        setEvents(data || []);
       } catch (err: any) {
         console.error("❌ Cloud fetch failed:", err.message);
+        // Explicitly set empty so we don't show mock data
+        setEvents([]);
+      } finally {
+        setLoading(false);
       }
-
-      // Fallback only if Cloud is unconfigured or failed completely
-      const cached = localStorage.getItem(STORAGE_KEY);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            console.info("📂 Falling back to local cache.");
-            setEvents(parsed);
-            setLoading(false);
-            return;
-          }
-        } catch (e) {}
-      }
-
-      // Final fallback: Seeds
-      console.warn("⚠️ Initializing with mock seeding.");
-      setEvents(MOCK_EVENTS);
-      setLoading(false);
     };
 
     hydratePipeline();
@@ -169,27 +147,11 @@ const AppContent: React.FC = () => {
 
   const handleSaveEvent = async (event: EventRecord) => {
     try {
-      if (isSupabaseConfigured) {
-        console.info(`💾 Persisting record ${event.id}...`);
-        
-        /**
-         * Operational Table Routing:
-         * Leads (contacted: false) -> 'contact'
-         * Managed (contacted: true) -> 'pipeline'
-         */
-        if (event.contacted) {
-          // Record moved to Managed: Upsert into pipeline and remove from lead list
-          const { error: upsertError } = await supabase.from('pipeline').upsert(event);
-          if (upsertError) throw upsertError;
-          await supabase.from('contact').delete().eq('id', event.id);
-        } else {
-          // Record remains a Lead: Upsert into contact
-          const { error: upsertError } = await supabase.from('contact').upsert(event);
-          if (upsertError) throw upsertError;
-          // Clean up pipeline if it was accidentally moved back (safety)
-          await supabase.from('pipeline').delete().eq('id', event.id);
-        }
-      }
+      if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
+
+      console.info(`💾 Persisting record to 'events' table...`);
+      const { error } = await supabase.from('events').upsert(event);
+      if (error) throw error;
 
       // Update UI state only after successful cloud write
       setEvents(prev => {
@@ -201,21 +163,16 @@ const AppContent: React.FC = () => {
       setEditingEvent(undefined);
     } catch (err: any) {
       console.error("Save failure:", err);
-      alert(`Critical Persistence Failure: ${err.message || "Connection lost"}`);
+      alert(`Critical Persistence Failure: ${err.message}`);
     }
   };
 
   const handleDeleteEvent = async (id: string) => {
-    if (!window.confirm("Confirm permanent removal from cloud stores?")) return;
+    if (!window.confirm("Confirm permanent removal from the 'events' cloud store?")) return;
     
     try {
-      if (isSupabaseConfigured) {
-        // Clear from both possible locations
-        await Promise.all([
-          supabase.from('contact').delete().eq('id', id),
-          supabase.from('pipeline').delete().eq('id', id)
-        ]);
-      }
+      const { error } = await supabase.from('events').delete().eq('id', id);
+      if (error) throw error;
 
       setEvents(prev => prev.filter(e => e.id !== id));
       setShowForm(false);
@@ -223,13 +180,6 @@ const AppContent: React.FC = () => {
     } catch (err: any) {
       console.error("Delete failure:", err);
       alert("Removal failed. Check your connection.");
-    }
-  };
-
-  const resetToMocks = () => {
-    if (window.confirm("Overwrite current view with demo seeding? (Warning: This will clear your local cache)")) {
-      localStorage.removeItem(STORAGE_KEY);
-      setEvents(MOCK_EVENTS);
     }
   };
 
@@ -246,17 +196,16 @@ const AppContent: React.FC = () => {
     let result = [...events].filter(Boolean);
     if (activeFilter === 'new') result = result.filter(e => !e.contacted);
     else if (activeFilter === 'pending_deposit') result = result.filter(e => !e.depositPaid || !e.balancePaid);
-    return result.sort((a, b) => new Date(a.dateRequested || 0).getTime() - new Date(b.dateRequested || 0).getTime());
+    return result;
   }, [events, activeFilter]);
 
   if (isPublicView) return <PublicEventForm onSubmit={handleSaveEvent} />;
   
-  if (loading && session && isSupabaseConfigured) return (
+  if (loading && session) return (
     <div className="h-screen bg-[#faf9f6] flex flex-col items-center justify-center space-y-4">
       <div className="w-12 h-12 border-[6px] border-amber-700/20 border-t-amber-700 rounded-full animate-spin"></div>
       <div className="text-center">
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-900/60">Establishing Cloud Link</p>
-        <p className="text-[8px] font-bold uppercase tracking-[0.1em] text-gray-400 mt-1">Syncing Canonical Manifest</p>
       </div>
     </div>
   );
@@ -280,7 +229,6 @@ const AppContent: React.FC = () => {
             <button onClick={() => setShowEmbedModal(true)} title="Embed Form" className="text-gray-400 hover:text-white transition-colors p-2">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
             </button>
-            <button onClick={resetToMocks} className="bg-white/5 hover:bg-white/10 text-amber-600/60 hover:text-amber-600 px-4 py-2 rounded-lg font-black transition-all text-[10px] uppercase tracking-widest border border-amber-900/10">Reset Demo</button>
             <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg font-black shadow-xl text-[10px] uppercase tracking-widest transition-all active:scale-95">Add Booking</button>
             {session && <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>}
           </div>
