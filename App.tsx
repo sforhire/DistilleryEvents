@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
+import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import EventForm from './components/EventForm';
 import DashboardStats from './components/DashboardStats';
@@ -15,9 +15,9 @@ interface EBState { hasError: boolean; error: Error | null; }
 
 /**
  * Standard Error Boundary to catch UI crashes.
- * Fix: Explicitly use React.Component to ensure props and state types are correctly inherited by the class.
+ * Fix: Extended Component directly from react to ensure this.props and this.state are correctly typed and inherited.
  */
-class ErrorBoundary extends React.Component<EBProps, EBState> {
+class ErrorBoundary extends Component<EBProps, EBState> {
   public state: EBState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }

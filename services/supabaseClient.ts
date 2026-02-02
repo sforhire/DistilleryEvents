@@ -1,14 +1,16 @@
+
 import { createClient } from '@supabase/supabase-js';
 import { getEnv } from './utils';
 
-// Prioritize Vite-prefixed variables for Vercel compatibility
-const supabaseUrl = getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL');
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
+// Step 2: Use Vite env vars strictly
+// We check for VITE_ prefixed versions first as per Vercel/Vite standards
+const supabaseUrl = getEnv('VITE_SUPABASE_URL');
+const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
 
-// Step 3: Diagnostic logging (masking keys for safety)
+// Step 3: Diagnostic logging on startup
 console.log("--- SUPABASE CONFIG DIAGNOSTIC ---");
-console.log(`VITE_SUPABASE_URL present: ${!!supabaseUrl} ${supabaseUrl ? `(${supabaseUrl.substring(0, 20)}...)` : ''}`);
-console.log(`VITE_SUPABASE_ANON_KEY present: ${!!supabaseAnonKey} ${supabaseAnonKey ? `(${supabaseAnonKey.substring(0, 6)}...)` : ''}`);
+console.log(`VITE_SUPABASE_URL present: ${!!supabaseUrl} ${supabaseUrl ? `(${supabaseUrl.substring(0, 20)}...)` : '(MISSING)'}`);
+console.log(`VITE_SUPABASE_ANON_KEY present: ${!!supabaseAnonKey} ${supabaseAnonKey ? `(${supabaseAnonKey.substring(0, 6)}...)` : '(MISSING)'}`);
 console.log("----------------------------------");
 
 export const isSupabaseConfigured = !!(
@@ -17,7 +19,7 @@ export const isSupabaseConfigured = !!(
   supabaseUrl.startsWith('http')
 );
 
-// Step 4: Fail loudly with exact instructions if configuration is missing
+// Step 4: Loud failure message
 const MISSING_VARS_ERROR = "Missing Vercel env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Add them in Vercel Project Settings → Environment Variables for Production, then redeploy.";
 
 let clientInstance: any = null;
@@ -32,6 +34,12 @@ if (isSupabaseConfigured) {
 } else {
   console.error(`⚠️ DistilleryEvents: ${MISSING_VARS_ERROR}`);
 }
+
+// Export raw values for the Diagnostic UI
+export const configValues = {
+  url: supabaseUrl,
+  key: supabaseAnonKey
+};
 
 export const supabase = clientInstance || {
   auth: { 

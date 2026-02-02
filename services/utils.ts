@@ -1,28 +1,28 @@
+
 /**
- * Safely retrieves environment variables across different browser/node environments.
- * Prioritizes Vite-style import.meta.env and VITE_ prefixed variables.
+ * Safely retrieves environment variables.
+ * Prioritizes Vite-style import.meta.env for Vercel/Vite builds.
  */
 export const getEnv = (key: string): string | undefined => {
   try {
-    // 1. Try Vite-specific import.meta.env
+    // 1. Vite / Vercel Build-time variables (The standard for modern React apps)
     // @ts-ignore
     if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
       // @ts-ignore
       return import.meta.env[key];
     }
 
-    // 2. Check global process.env (common in polyfilled or node-like envs)
+    // 2. Platform-injected process.env (Fallback for sandboxes/polyfilled envs)
     if (typeof process !== 'undefined' && process.env && process.env[key]) {
       return process.env[key];
     }
 
-    // 3. Check window/globalThis properties
+    // 3. Global window/globalThis properties (Fallback for raw script injections)
     const win = (typeof window !== 'undefined' ? window : globalThis) as any;
     if (win.process?.env?.[key]) return win.process.env[key];
     if (win.env?.[key]) return win.env[key];
-  } catch (e) {
-    // Silently fail to avoid crashing during boot
-  }
+    if (win.ENV?.[key]) return win.ENV[key];
+  } catch (e) {}
   return undefined;
 };
 
@@ -39,7 +39,7 @@ export const generateSafeId = (): string => {
 };
 
 /**
- * Formats a start time and end time into a concise 12h window (e.g., "12-3pm" or "6:30-9pm")
+ * Formats a start time and end time into a concise 12h window.
  */
 export const formatTimeWindow = (startTime: string, endTime: string): string => {
   if (!startTime || !startTime.includes(':') || !endTime || !endTime.includes(':')) return "TBD";
