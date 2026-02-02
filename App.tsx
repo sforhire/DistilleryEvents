@@ -14,12 +14,15 @@ import { formatTimeWindow } from './services/utils';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
+/**
+ * Standard Error Boundary to catch UI crashes.
+ * Fixed property access issues by using conventional React class component structure.
+ */
 class ErrorBoundary extends React.Component<EBProps, EBState> {
-  // Explicitly defining state and constructor to resolve inheritance-based property access issues in TS environments
-  public state: EBState = { hasError: false, error: null };
-
   constructor(props: EBProps) {
     super(props);
+    // Initialize state within the constructor to avoid shadowing base class properties
+    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
@@ -40,7 +43,7 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
         </div>
       );
     }
-    // Using this.props.children which is inherited from React.Component<EBProps, EBState>
+    // Correctly accessing children via this.props which is defined in React.Component
     return this.props.children;
   }
 }
