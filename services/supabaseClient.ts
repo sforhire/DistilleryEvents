@@ -4,34 +4,37 @@ import { getEnv } from './utils';
 const supabaseUrl = getEnv('SUPABASE_URL');
 const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
 
-// More resilient configuration check
+// Log status to browser console for easier debugging
+console.log("Supabase Connectivity Check:", {
+  urlDetected: !!supabaseUrl,
+  keyDetected: !!supabaseAnonKey,
+  urlLength: supabaseUrl?.length || 0
+});
+
 export const isSupabaseConfigured = !!(
   supabaseUrl && 
   supabaseAnonKey && 
-  supabaseUrl !== 'undefined' && 
-  supabaseUrl !== '' &&
-  supabaseUrl.length > 5 // Basic check to ensure a real URL is provided
+  supabaseUrl.startsWith('http')
 );
 
 let clientInstance: any = null;
 
 if (isSupabaseConfigured) {
   try {
-    // Only attempt initialization if keys appear valid
     clientInstance = createClient(supabaseUrl!, supabaseAnonKey!);
     console.info("⚡ DistilleryEvents: Cloud Link Active.");
   } catch (e) {
     console.error("Supabase Init Error:", e);
   }
 } else {
-  console.warn("⚠️ DistilleryEvents: Supabase configuration missing in Environment Variables.");
+  console.warn("⚠️ DistilleryEvents: Supabase configuration missing. Please set SUPABASE_URL and SUPABASE_ANON_KEY.");
 }
 
 export const supabase = clientInstance || {
   auth: { 
     getSession: async () => ({ data: { session: null }, error: null }), 
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-    signInWithPassword: async () => ({ data: { session: null }, error: { message: "Cloud sync keys missing. Set SUPABASE_URL and SUPABASE_ANON_KEY in project secrets." } }),
+    signInWithPassword: async () => ({ data: { session: null }, error: { message: "Environment keys missing. Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set." } }),
     signOut: async () => ({ error: null }),
     getUser: async () => ({ data: { user: null }, error: null })
   },

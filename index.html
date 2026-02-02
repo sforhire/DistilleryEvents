@@ -8,22 +8,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <script>
       (function() {
-        // Merge existing process.env if it exists to preserve injected secrets from the platform
-        const existingEnv = (window.process && window.process.env) || {};
+        // Detect if process.env already exists (provided by platform)
+        const platformEnv = (window.process && window.process.env) || (globalThis.process && globalThis.process.env) || {};
+        
         const env = { 
           NODE_ENV: 'production',
-          SUPABASE_URL: '',
-          SUPABASE_ANON_KEY: '',
-          API_KEY: '',
-          ...existingEnv
+          ...platformEnv
         };
+
+        // Standardize access across all common global patterns
         const proc = { env: env };
         window.process = proc;
-        window.global = window;
         window.env = env;
         globalThis.process = proc;
         globalThis.env = env;
-        globalThis.global = globalThis;
       })();
     </script>
     <style>

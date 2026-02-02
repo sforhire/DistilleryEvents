@@ -1,17 +1,25 @@
-
 /**
  * Safely retrieves environment variables across different browser/node environments.
  */
 export const getEnv = (key: string): string | undefined => {
   try {
+    // Check global process.env first (most standard)
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+      return process.env[key];
+    }
+    // Check window.process.env (common in browser sandboxes)
+    if (typeof window !== 'undefined') {
+      const win = window as any;
+      if (win.process?.env?.[key]) return win.process.env[key];
+      if (win.env?.[key]) return win.env[key];
+    }
+    // Check globalThis (modern standard)
     const g = globalThis as any;
     if (g.process?.env?.[key]) return g.process.env[key];
-    if (typeof window !== 'undefined') {
-      if ((window as any).env?.[key]) return (window as any).env[key];
-      if ((window as any).process?.env?.[key]) return (window as any).process.env[key];
-    }
-    if (typeof process !== 'undefined' && process.env?.[key]) return process.env[key];
-  } catch (e) {}
+    if (g.env?.[key]) return g.env[key];
+  } catch (e) {
+    console.warn(`Error reading env key ${key}:`, e);
+  }
   return undefined;
 };
 
