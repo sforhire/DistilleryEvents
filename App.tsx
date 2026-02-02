@@ -6,7 +6,6 @@ import EventSheet from './components/EventSheet';
 import MonthlyRevenueChart from './components/MonthlyRevenueChart';
 import PublicEventForm from './components/PublicEventForm';
 import EmbedModal from './components/EmbedModal';
-import AdminLogin from './components/AdminLogin';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import { formatTimeWindow } from './services/utils';
 
@@ -15,17 +14,18 @@ interface EBState { hasError: boolean; error: Error | null; }
 
 /**
  * Standard Error Boundary to catch UI crashes.
- * Fix: Explicitly using React.Component and constructor to ensure 'props' is recognized by TypeScript.
  */
-class ErrorBoundary extends React.Component<EBProps, EBState> {
-  constructor(props: EBProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
+// Fix: Extending Component directly and using class field for state to resolve TS errors where state/props were not recognized
+class ErrorBoundary extends Component<EBProps, EBState> {
+  state: EBState = { hasError: false, error: null };
 
-  static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
+  static getDerivedStateFromError(error: Error): EBState { 
+    return { hasError: true, error }; 
+  }
   
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
+    console.error("Pipeline Runtime Error:", error, errorInfo); 
+  }
   
   render() {
     if (this.state.hasError) {
@@ -41,7 +41,6 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
         </div>
       );
     }
-    // Correctly accessing inherited props
     return this.props.children;
   }
 }
@@ -62,7 +61,6 @@ const PrintPreviewModal: React.FC<{ event: EventRecord; onClose: () => void }> =
 
 const AppContent: React.FC = () => {
   const isPublicView = new URLSearchParams(window.location.search).get('view') === 'public';
-  const [session, setSession] = useState<any>(null);
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -73,25 +71,9 @@ const AppContent: React.FC = () => {
   const [printingEvent, setPrintingEvent] = useState<EventRecord | null>(null);
 
   useEffect(() => {
-    let mounted = true;
-    const checkInitialAuth = async () => {
-      try {
-        const { data: { session: s } } = await supabase.auth.getSession();
-        if (mounted) setSession(s);
-      } catch (err) {}
-    };
-    checkInitialAuth();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => { if (mounted) setSession(s); });
-    return () => { mounted = false; subscription.unsubscribe(); };
-  }, []);
-
-  useEffect(() => {
     const hydratePipeline = async () => {
+      // Still set loading false if config is missing so UI shows the empty state/errors
       if (!isSupabaseConfigured) {
-        setLoading(false);
-        return;
-      }
-      if (!session && !isPublicView) {
         setLoading(false);
         return;
       }
@@ -109,12 +91,12 @@ const AppContent: React.FC = () => {
       }
     };
     hydratePipeline();
-  }, [session, isPublicView]);
+  }, [isPublicView]);
 
   const handleSaveEvent = async (event: EventRecord) => {
     try {
       if (!isSupabaseConfigured) {
-        throw new Error("Missing Vercel env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Add them in Vercel Project Settings → Environment Variables for Production, then redeploy.");
+        throw new Error("Supabase is not configured. Check environment variables.");
       }
 
       const { error } = await supabase.from('events').upsert(event);
@@ -165,14 +147,12 @@ const AppContent: React.FC = () => {
 
   if (isPublicView) return <PublicEventForm onSubmit={handleSaveEvent} />;
   
-  if (loading && session) return (
+  if (loading) return (
     <div className="h-screen bg-[#faf9f6] flex flex-col items-center justify-center space-y-4">
       <div className="w-12 h-12 border-[6px] border-amber-700/20 border-t-amber-700 rounded-full animate-spin"></div>
       <p className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-900/60">Synchronizing Manifest</p>
     </div>
   );
-
-  if (isSupabaseConfigured && !session) return <AdminLogin />;
 
   return (
     <div className="min-h-screen bg-[#faf9f6]">
@@ -190,7 +170,6 @@ const AppContent: React.FC = () => {
           <div className="flex items-center gap-4">
             <button onClick={() => setShowEmbedModal(true)} title="Embed Form" className="text-gray-400 hover:text-white transition-colors p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg></button>
             <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg font-black shadow-xl text-[10px] uppercase tracking-widest transition-all">Add Booking</button>
-            {session && <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>}
           </div>
         </header>
 
