@@ -8,17 +8,6 @@ interface PublicEventFormProps {
   onSubmit: (event: EventRecord) => void;
 }
 
-const EVENT_TYPES = [
-  'Wedding',
-  'Corporate Mixer',
-  'Tasting Room Takeover',
-  'Private Dinner',
-  'Holiday Party',
-  'Birthday',
-  'Anniversary',
-  'Other'
-];
-
 const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
   const [formData, setFormData] = useState<EventRecord>({
     ...DEFAULT_EVENT,
@@ -82,8 +71,8 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
   return (
     <div className="max-w-4xl mx-auto py-12 px-6">
       <div className="text-center mb-12">
-        <h1 className="text-4xl font-black text-gray-900 uppercase tracking-tighter mb-2">Book Your Experience</h1>
-        <p className="text-amber-700 font-bold uppercase tracking-widest text-xs">Premium Distillery Events & Private Dining</p>
+        <h1 className="text-4xl font-black text-gray-900 uppercase tracking-tighter mb-2">Book Your Event</h1>
+        <p className="text-amber-700 font-bold uppercase tracking-widest text-xs">fill out the following info, and we will reach out to you as soon as possible!</p>
       </div>
 
       <form onSubmit={handleFormSubmit} className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
@@ -124,9 +113,7 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="md:col-span-2 space-y-1.5">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">What are we celebrating?</label>
-                <select name="eventType" value={formData.eventType} onChange={handleChange} className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 focus:border-amber-500 focus:bg-white transition-all font-bold outline-none">
-                  {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+                <input required name="eventType" value={formData.eventType} onChange={handleChange} className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl p-3 focus:border-amber-500 focus:bg-white transition-all font-bold outline-none" placeholder="e.g. Wedding, Birthday, Corporate..." />
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Guest Count</label>
@@ -166,25 +153,6 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
                 ))}
               </div>
             </div>
-
-            <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 space-y-6">
-              <div className="border-t border-gray-200 pt-6 space-y-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center text-amber-700">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                    </div>
-                    <div>
-                      <span className="text-xs font-black text-gray-900 uppercase">Include Food Service</span>
-                    </div>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" name="hasFood" checked={formData.hasFood} onChange={handleChange} className="sr-only peer" />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
-                  </label>
-                </div>
-              </div>
-            </div>
           </section>
 
           <section className="space-y-6">
@@ -193,7 +161,7 @@ const PublicEventForm: React.FC<PublicEventFormProps> = ({ onSubmit }) => {
               Directives
             </h3>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Any specific requests?</label>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Any more details we should know?</label>
               <textarea name="notes" value={formData.notes} onChange={handleChange} rows={4} className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl p-4 focus:border-amber-500 focus:bg-white transition-all font-medium outline-none text-sm" placeholder="Tell us more details..." />
             </div>
           </section>

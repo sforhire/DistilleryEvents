@@ -14,13 +14,22 @@ import { pushEventToCalendar } from './services/calendarService';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fixed: Explicitly using React.Component and removing override keyword to ensure inheritance is correctly recognized by the compiler
-class ErrorBoundary extends React.Component<EBProps, EBState> {
-  // Fixed: Removed override modifier to resolve "class does not extend another class" error
+// Fixed: Using directly imported Component and standard inheritance pattern to ensure 'props' is correctly typed and recognized by the compiler.
+class ErrorBoundary extends Component<EBProps, EBState> {
   public state: EBState = { hasError: false, error: null };
-  constructor(props: EBProps) { super(props); }
-  static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
+
+  constructor(props: EBProps) {
+    super(props);
+  }
+
+  static getDerivedStateFromError(error: Error): EBState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Pipeline Runtime Error:", error, errorInfo);
+  }
+
   render() {
     if (this.state.hasError) {
       return (
@@ -35,7 +44,7 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
         </div>
       );
     }
-    // Fixed: this.props is now accessible as the inheritance is correctly established
+    // Fixed: 'this.props' is now correctly accessible as the class properly extends 'Component'
     return this.props.children;
   }
 }
