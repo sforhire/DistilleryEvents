@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { EventRecord, BarType, FoodSource, FoodServiceType } from '../types';
 import { DEFAULT_EVENT } from '../constants';
@@ -89,7 +88,7 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose, onDelete 
         </div>
         
         <form onSubmit={handleSubmit} className="p-10">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 mb-12">
             
             <div className="space-y-8">
               <section>
@@ -228,25 +227,40 @@ const EventForm: React.FC<EventFormProps> = ({ event, onSave, onClose, onDelete 
                   </div>
                 </div>
               </section>
-
-              <div className="pt-4 flex flex-col gap-3">
-                <button type="submit" className="w-full bg-[#1a1a1a] text-amber-500 py-4 rounded-xl font-black uppercase tracking-[0.2em] text-[11px] shadow-2xl hover:bg-black transition-all">
-                  {event ? 'Sync Manifest' : 'Initialize Booking'}
-                </button>
-                
-                {event && (
-                  <button 
-                    type="button" 
-                    onClick={handleDelete}
-                    className="w-full bg-red-50 text-red-600 border border-red-100 py-4 rounded-xl font-black uppercase tracking-[0.2em] text-[11px] hover:bg-red-600 hover:text-white transition-all active:scale-95"
-                  >
-                    Delete Manifest
-                  </button>
-                )}
-
-                <button type="button" onClick={onClose} className="text-[10px] font-black uppercase tracking-widest text-gray-400 py-2 hover:text-gray-600">Discard Changes</button>
-              </div>
             </div>
+          </div>
+
+          <section className="mb-12">
+            <SectionTitle>06. Strategic Directives & Logistic Notes</SectionTitle>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Internal Manifest Notes</label>
+              <textarea 
+                name="notes" 
+                value={formData.notes} 
+                onChange={handleChange} 
+                rows={5} 
+                placeholder="Enter specific client requests, operational warnings, or FOH briefing points..."
+                className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl p-5 focus:border-amber-500 focus:bg-white transition-all font-medium outline-none text-sm leading-relaxed"
+              />
+            </div>
+          </section>
+
+          <div className="pt-4 flex flex-col md:flex-row gap-4">
+            <button type="submit" className="flex-1 bg-[#1a1a1a] text-amber-500 py-5 rounded-xl font-black uppercase tracking-[0.2em] text-[11px] shadow-2xl hover:bg-black transition-all">
+              {event ? 'Sync Manifest' : 'Initialize Booking'}
+            </button>
+            
+            {event && (
+              <button 
+                type="button" 
+                onClick={handleDelete}
+                className="bg-red-50 text-red-600 border border-red-100 px-8 py-5 rounded-xl font-black uppercase tracking-[0.2em] text-[11px] hover:bg-red-600 hover:text-white transition-all active:scale-95"
+              >
+                Delete Manifest
+              </button>
+            )}
+
+            <button type="button" onClick={onClose} className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-600">Discard Changes</button>
           </div>
         </form>
       </div>

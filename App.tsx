@@ -1,3 +1,4 @@
+
 import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import EventForm from './components/EventForm';
@@ -6,7 +7,7 @@ import EventSheet from './components/EventSheet';
 import MonthlyRevenueChart from './components/MonthlyRevenueChart';
 import PublicEventForm from './components/PublicEventForm';
 import EmbedModal from './components/EmbedModal';
-import { supabase, isSupabaseConfigured } from './services/supabaseClient';
+import { supabase, isSupabaseConfigured, MISSING_VARS_ERROR } from './services/supabaseClient';
 import { formatTimeWindow } from './services/utils';
 
 interface EBProps { children?: ReactNode; }
@@ -14,10 +15,15 @@ interface EBState { hasError: boolean; error: Error | null; }
 
 /**
  * Standard Error Boundary to catch UI crashes.
+ * Fix: Changed React.Component to Component and ensured standard inheritance patterns.
  */
-// Fix: Extending Component directly and using class field for state to resolve TS errors where state/props were not recognized
 class ErrorBoundary extends Component<EBProps, EBState> {
-  state: EBState = { hasError: false, error: null };
+  // Fix for line 21, 33, 39: Explicitly define the state property for TS clarity
+  public override state: EBState = { hasError: false, error: null };
+
+  constructor(props: EBProps) {
+    super(props);
+  }
 
   static getDerivedStateFromError(error: Error): EBState { 
     return { hasError: true, error }; 
@@ -41,6 +47,7 @@ class ErrorBoundary extends Component<EBProps, EBState> {
         </div>
       );
     }
+    // Fix for line 46: this.props.children is now correctly typed via Component inheritance
     return this.props.children;
   }
 }
@@ -72,7 +79,6 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const hydratePipeline = async () => {
-      // Still set loading false if config is missing so UI shows the empty state/errors
       if (!isSupabaseConfigured) {
         setLoading(false);
         return;
@@ -96,7 +102,7 @@ const AppContent: React.FC = () => {
   const handleSaveEvent = async (event: EventRecord) => {
     try {
       if (!isSupabaseConfigured) {
-        throw new Error("Supabase is not configured. Check environment variables.");
+        throw new Error(MISSING_VARS_ERROR);
       }
 
       const { error } = await supabase.from('events').upsert(event);
@@ -156,6 +162,11 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#faf9f6]">
+      {!isSupabaseConfigured && (
+        <div className="bg-amber-600 text-white p-2 text-center text-[10px] font-black uppercase tracking-widest no-print">
+          Warning: Offline Mode (Env Vars Missing)
+        </div>
+      )}
       <div className="no-print">
         <header className="bg-[#111111] h-20 flex items-center justify-between px-8 border-b border-amber-900/40 sticky top-0 z-40 shadow-2xl">
           <div className="flex items-center space-x-4">
@@ -186,7 +197,9 @@ const AppContent: React.FC = () => {
                   <tr className="bg-[#fcfbf7]/80 text-gray-400 text-[10px] uppercase font-black tracking-widest border-b border-gray-100">
                     <th className="px-8 py-5">Client</th>
                     <th className="px-8 py-5">Date & Time</th>
+                    <th className="px-6 py-5 text-center">Guests</th>
                     <th className="px-8 py-5">Financial</th>
+                    <th className="px-8 py-5">Strategic Notes</th>
                     <th className="px-8 py-5 text-right">Admin</th>
                   </tr>
                 </thead>
@@ -195,26 +208,37 @@ const AppContent: React.FC = () => {
                     <tr key={event.id} onClick={() => { setEditingEvent(event); setShowForm(true); }} className="group hover:bg-amber-50/10 transition-all cursor-pointer">
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-gray-900 text-white rounded-lg flex items-center justify-center text-xs font-black uppercase">{event.firstName?.[0]}{event.lastName?.[0]}</div>
-                          <div>
-                            <div className="font-black text-gray-900 leading-none flex items-center gap-2">{event.firstName} {event.lastName} {!event.contacted && <span className="w-1.5 h-1.5 bg-amber-600 rounded-full animate-ping"></span>}</div>
-                            <div className="text-[9px] text-amber-700 font-black uppercase mt-1.5 tracking-widest">{event.eventType}</div>
+                          <div className="w-8 h-8 bg-gray-900 text-white rounded-lg flex items-center justify-center text-xs font-black uppercase shrink-0">{event.firstName?.[0]}{event.lastName?.[0]}</div>
+                          <div className="min-w-0">
+                            <div className="font-black text-gray-900 leading-none flex items-center gap-2 truncate">{event.firstName} {event.lastName} {!event.contacted && <span className="w-1.5 h-1.5 bg-amber-600 rounded-full animate-ping shrink-0"></span>}</div>
+                            <div className="text-[9px] text-amber-700 font-black uppercase mt-1.5 tracking-widest truncate">{event.eventType}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-8 py-6">
-                        <div className="text-[13px] text-gray-900 font-black">{event.dateRequested ? new Date(event.dateRequested).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'DATE TBD'}</div>
-                        <div className="text-[10px] text-gray-500 font-bold uppercase mt-1 tracking-tighter">{formatTimeWindow(event.time, event.endTime)}</div>
+                        <div className="text-[13px] text-gray-900 font-black whitespace-nowrap">{event.dateRequested ? new Date(event.dateRequested).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'DATE TBD'}</div>
+                        <div className="text-[10px] text-gray-500 font-bold uppercase mt-1 tracking-tighter whitespace-nowrap">{formatTimeWindow(event.time, event.endTime)}</div>
+                      </td>
+                      <td className="px-6 py-6 text-center">
+                        <div className="inline-flex flex-col items-center justify-center">
+                           <span className="text-base font-black text-gray-900 leading-none">{event.guests || 0}</span>
+                           <span className="text-[8px] text-gray-400 font-black uppercase tracking-tighter mt-1">PAX</span>
+                        </div>
                       </td>
                       <td className="px-8 py-6">
-                        <div className="text-base font-black text-gray-900 tracking-tighter mb-1.5">${Number(event.totalAmount || 0).toLocaleString()}</div>
-                        <div className="flex gap-1.5"><span className={`text-[8px] font-black px-2 py-0.5 rounded-full border ${event.depositPaid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>D: {event.depositPaid ? 'SETTLED' : 'PENDING'}</span></div>
+                        <div className="text-base font-black text-gray-900 tracking-tighter mb-1.5 whitespace-nowrap">${Number(event.totalAmount || 0).toLocaleString()}</div>
+                        <div className="flex gap-1.5"><span className={`text-[8px] font-black px-2 py-0.5 rounded-full border whitespace-nowrap ${event.depositPaid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>D: {event.depositPaid ? 'SETTLED' : 'PENDING'}</span></div>
+                      </td>
+                      <td className="px-8 py-6 min-w-[200px]">
+                        <p className="text-[11px] text-gray-500 italic line-clamp-2 leading-relaxed">
+                          {event.notes || <span className="text-gray-300 uppercase font-black text-[9px] tracking-widest not-italic">No Directives</span>}
+                        </p>
                       </td>
                       <td className="px-8 py-6 text-right">
                         <button onClick={(e) => { e.stopPropagation(); setPrintingEvent(event); }} className="p-2.5 rounded-lg bg-gray-100 hover:bg-amber-600 text-gray-500 hover:text-white transition-all shadow-sm active:scale-95"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg></button>
                       </td>
                     </tr>
-                  )) : (<tr><td colSpan={4} className="px-8 py-32 text-center text-gray-300 uppercase font-black tracking-[0.3em] text-xs">No entries found</td></tr>)}
+                  )) : (<tr><td colSpan={6} className="px-8 py-32 text-center text-gray-300 uppercase font-black tracking-[0.3em] text-xs">No entries found</td></tr>)}
                 </tbody>
               </table>
             </div>

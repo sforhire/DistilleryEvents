@@ -1,5 +1,4 @@
-
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { EventRecord } from "../types";
 
 /**
@@ -27,7 +26,7 @@ export const generateFOHBriefing = async (event: EventRecord): Promise<string> =
 
   try {
     // Correct method: Query GenAI with model and prompt in a single call using recommended text task model
-    const response = await ai.models.generateContent({
+    const response: GenerateContentResponse = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {

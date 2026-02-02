@@ -10,9 +10,14 @@ export const getEnv = (key: string): string | undefined => {
 
     // 2. Check window/globalThis properties
     const win = (typeof window !== 'undefined' ? window : globalThis) as any;
+    
+    // Check standard locations
     if (win.process?.env?.[key]) return win.process.env[key];
     if (win.env?.[key]) return win.env[key];
     if (win.ENV?.[key]) return win.ENV[key];
+    
+    // Check if variables are at the top level of window (some simple injectors do this)
+    if (win[key]) return win[key];
   } catch (e) {}
   return undefined;
 };

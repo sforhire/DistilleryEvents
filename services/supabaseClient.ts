@@ -2,30 +2,31 @@ import { createClient } from '@supabase/supabase-js';
 import { getEnv } from './utils';
 
 /**
- * VERCEL/VITE REQUIREMENT: 
- * We must use direct, literal property access for the bundler to 
- * statically replace these values during the production build.
+ * Robust Supabase Configuration
+ * Checks multiple possible locations for environment variables to ensure compatibility
+ * across Vercel, Vite, and other ESM-based browser environments.
  */
-let viteUrl: string | undefined;
-let viteKey: string | undefined;
 
-try {
-  // @ts-ignore
-  viteUrl = import.meta.env.VITE_SUPABASE_URL;
-  // @ts-ignore
-  viteKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-} catch (e) {
-  // Non-build environment
-}
+const fetchConfig = () => {
+  // 1. Check for Vite-specific build-time variables
+  let viteUrl: string | undefined;
+  let viteKey: string | undefined;
+  
+  try {
+    // @ts-ignore - Only available in Vite builds
+    viteUrl = import.meta.env?.VITE_SUPABASE_URL;
+    // @ts-ignore - Only available in Vite builds
+    viteKey = import.meta.env?.VITE_SUPABASE_ANON_KEY;
+  } catch (e) {}
 
-const supabaseUrl = viteUrl || getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL');
-const supabaseAnonKey = viteKey || getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
+  // 2. Fallback to our robust utility which checks process.env and globals
+  const url = viteUrl || getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL');
+  const key = viteKey || getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
 
-// Step 3: Diagnostic logging on startup
-console.log("--- SUPABASE CONFIG DIAGNOSTIC ---");
-console.log(`VITE_SUPABASE_URL present: ${!!supabaseUrl} ${supabaseUrl ? `(${supabaseUrl.substring(0, 20)}...)` : '(MISSING)'}`);
-console.log(`VITE_SUPABASE_ANON_KEY present: ${!!supabaseAnonKey} ${supabaseAnonKey ? `(${supabaseAnonKey.substring(0, 6)}...)` : '(MISSING)'}`);
-console.log("----------------------------------");
+  return { url, key };
+};
+
+const { url: supabaseUrl, key: supabaseAnonKey } = fetchConfig();
 
 export const isSupabaseConfigured = !!(
   supabaseUrl && 
@@ -33,8 +34,7 @@ export const isSupabaseConfigured = !!(
   supabaseUrl.startsWith('http')
 );
 
-// Step 4: Fail loudly with exact instructions
-export const MISSING_VARS_ERROR = "Missing Vercel env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Add them in Vercel Project Settings → Environment Variables for Production, then redeploy.";
+export const MISSING_VARS_ERROR = "⚠️ Supabase Credentials Missing: Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set in your environment variables.";
 
 let clientInstance: any = null;
 
@@ -43,10 +43,11 @@ if (isSupabaseConfigured) {
     clientInstance = createClient(supabaseUrl!, supabaseAnonKey!);
     console.info("⚡ DistilleryEvents: Cloud Link Active.");
   } catch (e) {
-    console.error("Supabase Init Error:", e);
+    console.error("Supabase Initialization Failed:", e);
   }
 } else {
-  console.error(`⚠️ DistilleryEvents: ${MISSING_VARS_ERROR}`);
+  // We log this as a warning so the UI can still render with the ErrorBoundary if needed
+  console.warn(MISSING_VARS_ERROR);
 }
 
 export const configValues = {
@@ -54,6 +55,7 @@ export const configValues = {
   key: supabaseAnonKey
 };
 
+// Fallback "Mock" client to prevent hard crashes when variables are missing
 export const supabase = clientInstance || {
   auth: { 
     getSession: async () => ({ data: { session: null }, error: null }), 
