@@ -1,5 +1,4 @@
-
-import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo, Component } from 'react';
+import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import EventForm from './components/EventForm';
 import DashboardStats from './components/DashboardStats';
@@ -16,23 +15,16 @@ interface EBState { hasError: boolean; error: Error | null; }
 
 /**
  * Standard Error Boundary to catch UI crashes.
- * Refactored to use Component from React and class properties for state initialization 
- * to resolve property existence errors in the build pipeline.
+ * Fix: Explicitly use React.Component to ensure props and state types are correctly inherited by the class.
  */
-class ErrorBoundary extends Component<EBProps, EBState> {
-  // Use class property for state to ensure TypeScript correctly identifies the member
+class ErrorBoundary extends React.Component<EBProps, EBState> {
   public state: EBState = { hasError: false, error: null };
-
-  constructor(props: EBProps) {
-    super(props);
-  }
 
   static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
   
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
   
   render() {
-    // Accessing state property which is now explicitly defined and inherited
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
@@ -46,7 +38,7 @@ class ErrorBoundary extends Component<EBProps, EBState> {
         </div>
       );
     }
-    // Accessing props.children which is inherited from Component<EBProps, EBState>
+    // Correctly accessing inherited props
     return this.props.children;
   }
 }
@@ -102,8 +94,6 @@ const AppContent: React.FC = () => {
       }
 
       setLoading(true);
-      console.info("⚡ Fetching canonical manifest from Supabase...");
-
       try {
         const { data, error } = await supabase.from('events').select('*').order('dateRequested', { ascending: true });
         if (error) throw error;
@@ -120,9 +110,10 @@ const AppContent: React.FC = () => {
 
   const handleSaveEvent = async (event: EventRecord) => {
     try {
-      if (!isSupabaseConfigured) throw new Error("Environment configuration missing (SUPABASE_URL / ANON_KEY)");
+      if (!isSupabaseConfigured) {
+        throw new Error("Missing Vercel env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Add them in Vercel Project Settings → Environment Variables for Production, then redeploy.");
+      }
 
-      console.info(`💾 Upserting record ${event.id} to 'events' table...`);
       const { error } = await supabase.from('events').upsert(event);
       if (error) throw error;
 
@@ -135,7 +126,7 @@ const AppContent: React.FC = () => {
       setEditingEvent(undefined);
     } catch (err: any) {
       console.error("Save failure:", err);
-      alert(`Persistence Failure: ${err.message}`);
+      alert(err.message);
     }
   };
 

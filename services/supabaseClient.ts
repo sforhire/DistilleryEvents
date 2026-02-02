@@ -1,21 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
 import { getEnv } from './utils';
 
-const supabaseUrl = getEnv('SUPABASE_URL');
-const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
+// Prioritize Vite-prefixed variables for Vercel compatibility
+const supabaseUrl = getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL');
+const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
 
-// Log status to browser console for easier debugging
-console.log("Supabase Connectivity Check:", {
-  urlDetected: !!supabaseUrl,
-  keyDetected: !!supabaseAnonKey,
-  urlLength: supabaseUrl?.length || 0
-});
+// Step 3: Diagnostic logging (masking keys for safety)
+console.log("--- SUPABASE CONFIG DIAGNOSTIC ---");
+console.log(`VITE_SUPABASE_URL present: ${!!supabaseUrl} ${supabaseUrl ? `(${supabaseUrl.substring(0, 20)}...)` : ''}`);
+console.log(`VITE_SUPABASE_ANON_KEY present: ${!!supabaseAnonKey} ${supabaseAnonKey ? `(${supabaseAnonKey.substring(0, 6)}...)` : ''}`);
+console.log("----------------------------------");
 
 export const isSupabaseConfigured = !!(
   supabaseUrl && 
   supabaseAnonKey && 
   supabaseUrl.startsWith('http')
 );
+
+// Step 4: Fail loudly with exact instructions if configuration is missing
+const MISSING_VARS_ERROR = "Missing Vercel env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Add them in Vercel Project Settings → Environment Variables for Production, then redeploy.";
 
 let clientInstance: any = null;
 
@@ -27,14 +30,14 @@ if (isSupabaseConfigured) {
     console.error("Supabase Init Error:", e);
   }
 } else {
-  console.warn("⚠️ DistilleryEvents: Supabase configuration missing. Please set SUPABASE_URL and SUPABASE_ANON_KEY.");
+  console.error(`⚠️ DistilleryEvents: ${MISSING_VARS_ERROR}`);
 }
 
 export const supabase = clientInstance || {
   auth: { 
     getSession: async () => ({ data: { session: null }, error: null }), 
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-    signInWithPassword: async () => ({ data: { session: null }, error: { message: "Environment keys missing. Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set." } }),
+    signInWithPassword: async () => ({ data: { session: null }, error: { message: MISSING_VARS_ERROR } }),
     signOut: async () => ({ error: null }),
     getUser: async () => ({ data: { user: null }, error: null })
   },

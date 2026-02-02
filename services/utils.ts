@@ -1,24 +1,27 @@
 /**
  * Safely retrieves environment variables across different browser/node environments.
+ * Prioritizes Vite-style import.meta.env and VITE_ prefixed variables.
  */
 export const getEnv = (key: string): string | undefined => {
   try {
-    // Check global process.env first (most standard)
+    // 1. Try Vite-specific import.meta.env
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+      // @ts-ignore
+      return import.meta.env[key];
+    }
+
+    // 2. Check global process.env (common in polyfilled or node-like envs)
     if (typeof process !== 'undefined' && process.env && process.env[key]) {
       return process.env[key];
     }
-    // Check window.process.env (common in browser sandboxes)
-    if (typeof window !== 'undefined') {
-      const win = window as any;
-      if (win.process?.env?.[key]) return win.process.env[key];
-      if (win.env?.[key]) return win.env[key];
-    }
-    // Check globalThis (modern standard)
-    const g = globalThis as any;
-    if (g.process?.env?.[key]) return g.process.env[key];
-    if (g.env?.[key]) return g.env[key];
+
+    // 3. Check window/globalThis properties
+    const win = (typeof window !== 'undefined' ? window : globalThis) as any;
+    if (win.process?.env?.[key]) return win.process.env[key];
+    if (win.env?.[key]) return win.env[key];
   } catch (e) {
-    console.warn(`Error reading env key ${key}:`, e);
+    // Silently fail to avoid crashing during boot
   }
   return undefined;
 };
