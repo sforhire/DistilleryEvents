@@ -17,20 +17,23 @@ const STORAGE_KEY = 'appData_v1';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-/**
- * Fixed ErrorBoundary by extending Component directly to ensure that 'props' and 'state'
- * are correctly identified as members of the class.
- */
-class ErrorBoundary extends Component<EBProps, EBState> {
+// Fixed: Explicitly extend React.Component and ensure state is properly initialized to satisfy TS
+class ErrorBoundary extends React.Component<EBProps, EBState> {
   constructor(props: EBProps) {
     super(props);
-    // Fix for line 23: state now correctly recognized as inherited from Component
     this.state = { hasError: false, error: null };
   }
-  static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
+
+  static getDerivedStateFromError(error: Error): EBState { 
+    return { hasError: true, error }; 
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
+    console.error("Pipeline Runtime Error:", error, errorInfo); 
+  }
+
   render() {
-    // Fix for line 28: state now correctly recognized as inherited from Component
+    // Fixed: State and props now correctly recognized from React.Component inheritance
     const { hasError, error } = this.state;
     if (hasError) {
       return (
@@ -45,7 +48,6 @@ class ErrorBoundary extends Component<EBProps, EBState> {
         </div>
       );
     }
-    // Fix for line 42: props now correctly recognized as inherited from Component
     return this.props.children;
   }
 }
@@ -106,32 +108,34 @@ const AppContent: React.FC = () => {
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
-  // Optimized Data Hydration Precedence
+  // Hybrid Data Hydration Strategy
   useEffect(() => {
     const hydratePipeline = async () => {
       setLoading(true);
 
-      // 1. Prioritize Cloud (Supabase)
+      // Priority 1: Cloud (Supabase) - ABSOLUTE TRUTH
       if (isSupabaseConfigured && (session || isPublicView)) {
         try {
           const { data, error } = await supabase.from('events').select('*').order('dateRequested', { ascending: true });
           if (!error) {
-            // Success: Even if data is empty [], we treat cloud as the source of truth.
+            console.info("⚡ Cloud hydration successful.");
             setEvents(data || []);
             setLoading(false);
             return;
           }
+          console.error("Cloud fetch error:", error.message);
         } catch (err) {
-          console.error("Cloud hydration failed:", err);
+          console.error("Cloud connection failure:", err);
         }
       }
 
-      // 2. Secondary: Local Storage Cache (If Cloud fails or is missing)
-      const cachedData = localStorage.getItem(STORAGE_KEY);
-      if (cachedData) {
+      // Priority 2: Local Storage (Cache only if Cloud is unreachable)
+      const savedData = localStorage.getItem(STORAGE_KEY);
+      if (savedData) {
         try {
-          const parsed = JSON.parse(cachedData);
-          if (Array.isArray(parsed)) {
+          const parsed = JSON.parse(savedData);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            console.info("📂 Cache hydration active.");
             setEvents(parsed);
             setLoading(false);
             return;
@@ -141,65 +145,67 @@ const AppContent: React.FC = () => {
         }
       }
 
-      // 3. Fallback: Initial Mock Data (Only if EVERYTHING is empty)
-      if (events.length === 0) {
-        console.warn("USING MOCK DATA - Supabase empty or seeding enabled");
-        setEvents(MOCK_EVENTS);
-      }
+      // Priority 3: Mock Data (Only if First-Run and empty)
+      console.warn("USING MOCK DATA - Supabase empty or seeding enabled");
+      setEvents(MOCK_EVENTS);
       setLoading(false);
     };
-
     hydratePipeline();
   }, [session, isPublicView]);
 
-  // Debounced Local Persistence Effect
+  // Debounced Local Cache Sync
   useEffect(() => {
-    if (loading) return; // Don't write back while initial loading is in progress
-    const saveToStorage = setTimeout(() => {
+    if (loading) return;
+    const timer = setTimeout(() => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-    }, 400);
-    return () => clearTimeout(saveToStorage);
+    }, 500);
+    return () => clearTimeout(timer);
   }, [events, loading]);
 
   const handleSaveEvent = async (event: EventRecord) => {
     try {
-      // Optimistic update
-      const updatedEvents = events.some(e => e.id === event.id)
-        ? events.map(e => e.id === event.id ? event : e)
-        : [...events, event];
-      
-      setEvents(updatedEvents);
+      // Optimistic update of UI
+      setEvents(prev => {
+        const exists = prev.some(e => e.id === event.id);
+        return exists ? prev.map(e => e.id === event.id ? event : e) : [...prev, event];
+      });
 
+      // Persistent write to Cloud
       if (isSupabaseConfigured) {
         const { error } = await supabase.from('events').upsert(event);
-        if (error) console.error("Cloud save error:", error);
+        if (error) throw error;
       }
-      
+
       setShowForm(false);
       setEditingEvent(undefined);
     } catch (err: any) {
-      console.error("Save pipeline failure:", err);
+      alert(`Critical Save Failure: ${err.message || err}`);
     }
   };
 
   const handleDeleteEvent = async (id: string) => {
     try {
+      // UI Update
       setEvents(prev => prev.filter(e => e.id !== id));
+
+      // Cloud deletion
       if (isSupabaseConfigured) {
-        await supabase.from('events').delete().eq('id', id);
+        const { error } = await supabase.from('events').delete().eq('id', id);
+        if (error) throw error;
       }
+
       setShowForm(false);
       setEditingEvent(undefined);
     } catch (err: any) {
-      console.error("Delete pipeline failure:", err);
+      alert(`Deletion Error: ${err.message || err}`);
     }
   };
 
   const resetToMocks = () => {
-    if (window.confirm("Restore demo environment? This will overwrite existing local data with the default operational manifest.")) {
-      console.warn("USING MOCK DATA - Manual reset triggered");
+    if (window.confirm("Restore demo environment? This clears local cache but does NOT delete cloud data unless you manually save over it.")) {
       localStorage.removeItem(STORAGE_KEY);
       setEvents(MOCK_EVENTS);
+      console.warn("USING MOCK DATA - Manual reset triggered");
     }
   };
 
@@ -221,6 +227,7 @@ const AppContent: React.FC = () => {
 
   if (isPublicView) return <PublicEventForm onSubmit={handleSaveEvent} />;
   
+  // Loading screen prevents mock data flash
   if (loading && !session && isSupabaseConfigured) return (
     <div className="h-screen bg-[#faf9f6] flex flex-col items-center justify-center space-y-4">
       <div className="w-10 h-10 border-4 border-amber-700 border-t-transparent rounded-full animate-spin"></div>
@@ -244,6 +251,7 @@ const AppContent: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <button onClick={() => setShowEmbedModal(true)} className="text-gray-400 hover:text-white transition-colors p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg></button>
             <button onClick={resetToMocks} className="bg-white/5 hover:bg-white/10 text-amber-600/60 hover:text-amber-600 px-4 py-2 rounded-lg font-black transition-all text-[10px] uppercase tracking-widest border border-amber-900/10">Reset Demo</button>
             <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg font-black shadow-xl text-[10px] uppercase tracking-widest transition-all active:scale-95">Add Booking</button>
             {session && <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>}
