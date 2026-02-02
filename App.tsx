@@ -17,15 +17,20 @@ const STORAGE_KEY = 'appData_v1';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Use React.Component to ensure props property is correctly inherited and recognized by the TypeScript compiler
-class ErrorBoundary extends React.Component<EBProps, EBState> {
+/**
+ * Fixed ErrorBoundary by extending Component directly to ensure that 'props' and 'state'
+ * are correctly identified as members of the class.
+ */
+class ErrorBoundary extends Component<EBProps, EBState> {
   constructor(props: EBProps) {
     super(props);
+    // Fix for line 23: state now correctly recognized as inherited from Component
     this.state = { hasError: false, error: null };
   }
   static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
   render() {
+    // Fix for line 28: state now correctly recognized as inherited from Component
     const { hasError, error } = this.state;
     if (hasError) {
       return (
@@ -40,7 +45,7 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
         </div>
       );
     }
-    // Fixed: Referencing this.props.children which is now correctly resolved via inheritance
+    // Fix for line 42: props now correctly recognized as inherited from Component
     return this.props.children;
   }
 }
@@ -101,83 +106,98 @@ const AppContent: React.FC = () => {
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
-  // Hybrid Data Fetching Strategy
+  // Optimized Data Hydration Precedence
   useEffect(() => {
-    const fetchEvents = async () => {
+    const hydratePipeline = async () => {
       setLoading(true);
 
-      // Priority 1: Cloud Sync (If Configured)
+      // 1. Prioritize Cloud (Supabase)
       if (isSupabaseConfigured && (session || isPublicView)) {
         try {
           const { data, error } = await supabase.from('events').select('*').order('dateRequested', { ascending: true });
           if (!error) {
+            // Success: Even if data is empty [], we treat cloud as the source of truth.
             setEvents(data || []);
             setLoading(false);
             return;
           }
         } catch (err) {
-          console.error("Cloud fetch failed, checking local cache...");
+          console.error("Cloud hydration failed:", err);
         }
       }
 
-      // Priority 2: Local Storage Cache
-      const savedData = localStorage.getItem(STORAGE_KEY);
-      if (savedData) {
+      // 2. Secondary: Local Storage Cache (If Cloud fails or is missing)
+      const cachedData = localStorage.getItem(STORAGE_KEY);
+      if (cachedData) {
         try {
-          const parsed = JSON.parse(savedData);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          const parsed = JSON.parse(cachedData);
+          if (Array.isArray(parsed)) {
             setEvents(parsed);
             setLoading(false);
             return;
           }
         } catch (e) {
-          console.error("Local parse failed.");
+          console.error("Cache parsing failure.");
         }
       }
 
-      // Priority 3: Fallback to Mock Data (First Run Only)
-      setEvents(MOCK_EVENTS);
+      // 3. Fallback: Initial Mock Data (Only if EVERYTHING is empty)
+      if (events.length === 0) {
+        console.warn("USING MOCK DATA - Supabase empty or seeding enabled");
+        setEvents(MOCK_EVENTS);
+      }
       setLoading(false);
     };
-    fetchEvents();
+
+    hydratePipeline();
   }, [session, isPublicView]);
 
-  // Debounced Local Storage Persistence
+  // Debounced Local Persistence Effect
   useEffect(() => {
-    if (loading) return;
-    const timer = setTimeout(() => {
+    if (loading) return; // Don't write back while initial loading is in progress
+    const saveToStorage = setTimeout(() => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-    }, 500);
-    return () => clearTimeout(timer);
+    }, 400);
+    return () => clearTimeout(saveToStorage);
   }, [events, loading]);
 
   const handleSaveEvent = async (event: EventRecord) => {
     try {
+      // Optimistic update
+      const updatedEvents = events.some(e => e.id === event.id)
+        ? events.map(e => e.id === event.id ? event : e)
+        : [...events, event];
+      
+      setEvents(updatedEvents);
+
       if (isSupabaseConfigured) {
-        await supabase.from('events').upsert(event);
+        const { error } = await supabase.from('events').upsert(event);
+        if (error) console.error("Cloud save error:", error);
       }
-      setEvents(prev => {
-        const exists = prev.some(e => e.id === event.id);
-        return exists ? prev.map(e => e.id === event.id ? event : e) : [...prev, event];
-      });
+      
       setShowForm(false);
       setEditingEvent(undefined);
-    } catch (err: any) {}
+    } catch (err: any) {
+      console.error("Save pipeline failure:", err);
+    }
   };
 
   const handleDeleteEvent = async (id: string) => {
     try {
+      setEvents(prev => prev.filter(e => e.id !== id));
       if (isSupabaseConfigured) {
         await supabase.from('events').delete().eq('id', id);
       }
-      setEvents(prev => prev.filter(e => e.id !== id));
       setShowForm(false);
       setEditingEvent(undefined);
-    } catch (err: any) {}
+    } catch (err: any) {
+      console.error("Delete pipeline failure:", err);
+    }
   };
 
   const resetToMocks = () => {
-    if (window.confirm("Restore demo environment? This will overwrite local data with the default operational manifest.")) {
+    if (window.confirm("Restore demo environment? This will overwrite existing local data with the default operational manifest.")) {
+      console.warn("USING MOCK DATA - Manual reset triggered");
       localStorage.removeItem(STORAGE_KEY);
       setEvents(MOCK_EVENTS);
     }
@@ -199,13 +219,15 @@ const AppContent: React.FC = () => {
     return result.sort((a, b) => new Date(a.dateRequested || 0).getTime() - new Date(b.dateRequested || 0).getTime());
   }, [events, activeFilter]);
 
-  if (isPublicView) return <PublicEventForm onSubmit={async (e) => { if (isSupabaseConfigured) await supabase.from('events').insert(e); }} />;
+  if (isPublicView) return <PublicEventForm onSubmit={handleSaveEvent} />;
+  
   if (loading && !session && isSupabaseConfigured) return (
     <div className="h-screen bg-[#faf9f6] flex flex-col items-center justify-center space-y-4">
       <div className="w-10 h-10 border-4 border-amber-700 border-t-transparent rounded-full animate-spin"></div>
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Syncing Engine...</p>
     </div>
   );
+
   if (isSupabaseConfigured && !session) return <AdminLogin />;
 
   return (
@@ -222,7 +244,7 @@ const AppContent: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={resetToMocks} className="bg-white/5 hover:bg-white/10 text-amber-600/60 hover:text-amber-600 px-4 py-2 rounded-lg font-black transition-all text-[10px] uppercase tracking-widest border border-amber-900/10">Reset System</button>
+            <button onClick={resetToMocks} className="bg-white/5 hover:bg-white/10 text-amber-600/60 hover:text-amber-600 px-4 py-2 rounded-lg font-black transition-all text-[10px] uppercase tracking-widest border border-amber-900/10">Reset Demo</button>
             <button onClick={() => { setEditingEvent(undefined); setShowForm(true); }} className="bg-amber-700 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg font-black shadow-xl text-[10px] uppercase tracking-widest transition-all active:scale-95">Add Booking</button>
             {session && <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-500 hover:text-white transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>}
           </div>
