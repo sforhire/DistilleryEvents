@@ -15,10 +15,13 @@ interface EBState { hasError: boolean; error: Error | null; }
 
 /**
  * Standard Error Boundary to catch UI crashes.
- * Fix: Extended Component directly from react to ensure this.props and this.state are correctly typed and inherited.
+ * Fix: Explicitly using React.Component and constructor to ensure 'props' is recognized by TypeScript.
  */
-class ErrorBoundary extends Component<EBProps, EBState> {
-  public state: EBState = { hasError: false, error: null };
+class ErrorBoundary extends React.Component<EBProps, EBState> {
+  constructor(props: EBProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
 
   static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
   

@@ -1,11 +1,25 @@
-
 import { createClient } from '@supabase/supabase-js';
 import { getEnv } from './utils';
 
-// Step 2: Use Vite env vars strictly
-// We check for VITE_ prefixed versions first as per Vercel/Vite standards
-const supabaseUrl = getEnv('VITE_SUPABASE_URL');
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
+/**
+ * VERCEL/VITE REQUIREMENT: 
+ * We must use direct, literal property access for the bundler to 
+ * statically replace these values during the production build.
+ */
+let viteUrl: string | undefined;
+let viteKey: string | undefined;
+
+try {
+  // @ts-ignore
+  viteUrl = import.meta.env.VITE_SUPABASE_URL;
+  // @ts-ignore
+  viteKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+} catch (e) {
+  // Non-build environment
+}
+
+const supabaseUrl = viteUrl || getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL');
+const supabaseAnonKey = viteKey || getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
 
 // Step 3: Diagnostic logging on startup
 console.log("--- SUPABASE CONFIG DIAGNOSTIC ---");
@@ -19,8 +33,8 @@ export const isSupabaseConfigured = !!(
   supabaseUrl.startsWith('http')
 );
 
-// Step 4: Loud failure message
-const MISSING_VARS_ERROR = "Missing Vercel env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Add them in Vercel Project Settings → Environment Variables for Production, then redeploy.";
+// Step 4: Fail loudly with exact instructions
+export const MISSING_VARS_ERROR = "Missing Vercel env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Add them in Vercel Project Settings → Environment Variables for Production, then redeploy.";
 
 let clientInstance: any = null;
 
@@ -35,7 +49,6 @@ if (isSupabaseConfigured) {
   console.error(`⚠️ DistilleryEvents: ${MISSING_VARS_ERROR}`);
 }
 
-// Export raw values for the Diagnostic UI
 export const configValues = {
   url: supabaseUrl,
   key: supabaseAnonKey

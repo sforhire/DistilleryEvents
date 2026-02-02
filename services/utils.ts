@@ -1,23 +1,14 @@
-
 /**
- * Safely retrieves environment variables.
- * Prioritizes Vite-style import.meta.env for Vercel/Vite builds.
+ * Safely retrieves environment variables across different browser/node environments.
  */
 export const getEnv = (key: string): string | undefined => {
   try {
-    // 1. Vite / Vercel Build-time variables (The standard for modern React apps)
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
-      // @ts-ignore
-      return import.meta.env[key];
-    }
-
-    // 2. Platform-injected process.env (Fallback for sandboxes/polyfilled envs)
+    // 1. Check for platform-injected process.env (common in polyfilled or node-like envs)
     if (typeof process !== 'undefined' && process.env && process.env[key]) {
       return process.env[key];
     }
 
-    // 3. Global window/globalThis properties (Fallback for raw script injections)
+    // 2. Check window/globalThis properties
     const win = (typeof window !== 'undefined' ? window : globalThis) as any;
     if (win.process?.env?.[key]) return win.process.env[key];
     if (win.env?.[key]) return win.env[key];

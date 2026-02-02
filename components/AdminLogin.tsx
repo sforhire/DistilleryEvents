@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { supabase, isSupabaseConfigured, configValues } from '../services/supabaseClient';
+import { supabase, isSupabaseConfigured, configValues, MISSING_VARS_ERROR } from '../services/supabaseClient';
 
 const ConfigDiagnostic: React.FC = () => {
   const urlSnippet = configValues.url ? `${configValues.url.substring(0, 22)}...` : 'MISSING';
@@ -9,7 +8,7 @@ const ConfigDiagnostic: React.FC = () => {
   return (
     <div className="mt-8 p-4 bg-gray-900 rounded-2xl border border-amber-900/30 text-left">
       <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+        <span className={`w-2 h-2 rounded-full ${isSupabaseConfigured ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`}></span>
         System Configuration Diagnostic
       </h3>
       <div className="space-y-2 font-mono text-[10px]">
@@ -27,9 +26,11 @@ const ConfigDiagnostic: React.FC = () => {
         </div>
       </div>
       {!isSupabaseConfigured && (
-        <p className="mt-4 text-[9px] text-amber-200/60 leading-relaxed italic">
-          Variables not detected. Ensure keys are added in Vercel Settings and trigger a redeploy.
-        </p>
+        <div className="mt-4 p-3 bg-red-950/40 rounded-lg border border-red-900/50">
+          <p className="text-[9px] text-red-400 leading-relaxed font-bold uppercase tracking-tight">
+            {MISSING_VARS_ERROR}
+          </p>
+        </div>
       )}
     </div>
   );
@@ -44,7 +45,7 @@ const AdminLogin: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isSupabaseConfigured) {
-      setError("System Offline: Environment variables missing.");
+      setError(MISSING_VARS_ERROR);
       return;
     }
     
