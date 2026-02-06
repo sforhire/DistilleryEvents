@@ -1,5 +1,5 @@
 
-import React, { Component, useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
+import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import EventForm from './components/EventForm';
 import DashboardStats from './components/DashboardStats';
@@ -14,8 +14,11 @@ import { pushEventToCalendar } from './services/calendarService';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Fixed: Using directly imported Component and standard inheritance pattern to ensure 'props' is correctly typed and recognized by the compiler.
-class ErrorBoundary extends Component<EBProps, EBState> {
+/**
+ * Robust Error Boundary to catch render-time failures.
+ * Fixed: Explicitly extends React.Component to ensure 'props' is accessible in TypeScript.
+ */
+class ErrorBoundary extends React.Component<EBProps, EBState> {
   public state: EBState = { hasError: false, error: null };
 
   constructor(props: EBProps) {
@@ -44,7 +47,7 @@ class ErrorBoundary extends Component<EBProps, EBState> {
         </div>
       );
     }
-    // Fixed: 'this.props' is now correctly accessible as the class properly extends 'Component'
+    // Correctly accessing children from this.props
     return this.props.children;
   }
 }
@@ -147,8 +150,13 @@ const AppContent: React.FC = () => {
   const handleSaveEvent = async (event: EventRecord) => {
     try {
       if (!isSupabaseConfigured) throw new Error(MISSING_VARS_ERROR);
+      
       const { error } = await supabase.from('events').upsert(event);
-      if (error) throw error;
+      
+      if (error) {
+        throw new Error(`Database Error: ${error.message}`);
+      }
+      
       setEvents(prev => {
         const exists = prev.some(e => e.id === event.id);
         return exists ? prev.map(e => e.id === event.id ? event : e) : [...prev, event];
@@ -157,7 +165,13 @@ const AppContent: React.FC = () => {
       setEditingEvent(undefined);
     } catch (err: any) {
       console.error("Save failure:", err);
-      alert(err.message);
+      let friendlyMessage = err.message;
+      if (err.message?.includes('Failed to fetch')) {
+        friendlyMessage = "Network Connection Error: Unable to reach the server. Please check your internet connection or verify your Supabase URL/CORS settings.";
+      }
+      alert(friendlyMessage);
+      // Rethrow so the caller (like PublicEventForm) knows it failed
+      throw err;
     }
   };
 

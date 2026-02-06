@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 import { getEnv } from './utils';
 
@@ -20,8 +21,12 @@ const fetchConfig = () => {
   } catch (e) {}
 
   // 2. Fallback to our robust utility which checks process.env and globals
-  const url = viteUrl || getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL');
-  const key = viteKey || getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
+  let url = viteUrl || getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL');
+  let key = viteKey || getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
+
+  // Sanitize: Trim whitespace and remove trailing slashes which often cause "Failed to fetch"
+  url = url?.trim().replace(/\/$/, '');
+  key = key?.trim();
 
   return { url, key };
 };
@@ -46,7 +51,6 @@ if (isSupabaseConfigured) {
     console.error("Supabase Initialization Failed:", e);
   }
 } else {
-  // We log this as a warning so the UI can still render with the ErrorBoundary if needed
   console.warn(MISSING_VARS_ERROR);
 }
 
