@@ -115,13 +115,14 @@ const AppContent: React.FC = () => {
       
       const isNew = !events.some(e => e.id === event.id);
       
-      // Separate insert/update for maximum compatibility with RLS/CORS settings
-      const result = isNew 
+      // Clean request: Minimal calls to avoid browser security triggers in iframes
+      const { error } = isNew 
         ? await supabase.from('events').insert(event)
         : await supabase.from('events').update(event).eq('id', event.id);
 
-      if (result.error) throw result.error;
+      if (error) throw error;
       
+      // Update local state immediately for a smooth UI
       setEvents(prev => {
         const exists = prev.some(e => e.id === event.id);
         return exists ? prev.map(e => e.id === event.id ? event : e) : [...prev, event];
@@ -129,12 +130,12 @@ const AppContent: React.FC = () => {
       setShowForm(false);
       setEditingEvent(undefined);
     } catch (err: any) {
-      console.error("Save failure:", err);
+      console.error("Cloud Transmission Failure:", err);
       
       if (err.message?.includes('Failed to fetch') || err.name === 'TypeError') {
-        alert(`NETWORK ERROR: The request was blocked.\n\nLikely Causes:\n1. IFRAME BLOCK: If this is embedded, your browser might be blocking cross-origin requests.\n2. MISSING TABLE: Does the table 'events' exist in your Supabase project?\n3. WRONG URL: Is your URL exactly 'https://[ref].supabase.co'?\n4. RLS: Do you have an "INSERT" policy for anonymous users?\n\nCheck the browser console for details.`);
+        alert(`NETWORK BLOCK DETECTED:\n\nThe request was rejected by your browser's security settings (CORS).\n\nIf this is an iframe embed, please ensure your Supabase 'Site URL' and 'Allowed Origins' (Settings > API) includes this domain.`);
       } else {
-        alert("Database Error: " + err.message);
+        alert(`Database Rejection: ${err.message}\n(Check if table 'events' exists in your Supabase project)`);
       }
       throw err;
     }

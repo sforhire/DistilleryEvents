@@ -3,12 +3,17 @@ import { createClient } from '@supabase/supabase-js';
 import { getEnv } from './utils';
 
 /**
- * Robust Supabase Configuration
- * Optimized for Iframe/Embedded environments to avoid CORS preflight blocks.
+ * Total Storage Isolation for Iframe Resilience
+ * This prevents the 'SecurityError' / 'Failed to fetch' caused by 
+ * browsers blocking storage access in embedded contexts.
  */
+const memoryStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+};
 
 const fetchConfig = () => {
-  // 1. Try Vite-specific build-time variables
   let viteUrl: string | undefined;
   let viteKey: string | undefined;
   
@@ -19,7 +24,6 @@ const fetchConfig = () => {
     viteKey = import.meta.env?.VITE_SUPABASE_ANON_KEY;
   } catch (e) {}
 
-  // 2. Fallback to global/process lookup
   let url = viteUrl || getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL');
   let key = viteKey || getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
 
@@ -36,25 +40,34 @@ const fetchConfig = () => {
 };
 
 const { url: supabaseUrl, key: supabaseAnonKey } = fetchConfig();
-
-// Validate URL format - common source of "Failed to fetch"
 const isValidUrl = supabaseUrl?.startsWith('https://') && supabaseUrl?.includes('.supabase.');
 
 export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey && isValidUrl);
-
 export const MISSING_VARS_ERROR = !isValidUrl 
-  ? "⚠️ Invalid URL Format: Supabase URL must start with 'https://' and end with '.supabase.co'"
-  : "⚠️ Credentials Missing: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY not found.";
+  ? "⚠️ Connection Link Invalid: URL must be https://[ref].supabase.co"
+  : "⚠️ Credentials Missing: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY not detected.";
 
 let clientInstance: any = null;
 
 if (isSupabaseConfigured) {
   try {
-    // NOTE: We do NOT send custom headers here, as they cause CORS preflight failures in embedded iframes.
+    /**
+     * IFRAME-SAFE INITIALIZATION:
+     * 1. persistSession: false (No storage)
+     * 2. storage: memoryStorage (Hard-coded no-op storage to prevent SecurityErrors)
+     */
     clientInstance = createClient(supabaseUrl!, supabaseAnonKey!, {
-      auth: { persistSession: true, autoRefreshToken: true }
+      auth: { 
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        storage: memoryStorage
+      },
+      global: {
+        headers: {} // Keep it clean to avoid CORS preflight issues
+      }
     });
-    console.info("⚡ DistilleryEvents: Cloud Link Initialized.");
+    console.info("⚡ DistilleryEvents: Stateless Cloud Link Established.");
   } catch (e) {
     console.error("Supabase Initialization Failed:", e);
   }
