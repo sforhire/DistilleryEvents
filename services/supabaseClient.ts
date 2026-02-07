@@ -4,7 +4,7 @@ import { getEnv } from './utils';
 
 /**
  * Robust Supabase Configuration
- * Aggressively scrubs variables to prevent 'Failed to fetch' errors in Vercel/Vite.
+ * Optimized for Iframe/Embedded environments to avoid CORS preflight blocks.
  */
 
 const fetchConfig = () => {
@@ -23,10 +23,6 @@ const fetchConfig = () => {
   let url = viteUrl || getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL');
   let key = viteKey || getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
 
-  /**
-   * SCRUBBING LOGIC
-   * Removes quotes, spaces, and trailing slashes that break fetch requests.
-   */
   const scrub = (val: any): string | undefined => {
     if (typeof val !== 'string') return undefined;
     const cleaned = val.trim().replace(/^["']|["']$/g, '').replace(/\/$/, '');
@@ -41,21 +37,22 @@ const fetchConfig = () => {
 
 const { url: supabaseUrl, key: supabaseAnonKey } = fetchConfig();
 
-export const isSupabaseConfigured = !!(
-  supabaseUrl && 
-  supabaseAnonKey && 
-  supabaseUrl.startsWith('http')
-);
+// Validate URL format - common source of "Failed to fetch"
+const isValidUrl = supabaseUrl?.startsWith('https://') && supabaseUrl?.includes('.supabase.');
 
-export const MISSING_VARS_ERROR = "⚠️ Supabase Credentials Error: Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel/Local environment settings.";
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey && isValidUrl);
+
+export const MISSING_VARS_ERROR = !isValidUrl 
+  ? "⚠️ Invalid URL Format: Supabase URL must start with 'https://' and end with '.supabase.co'"
+  : "⚠️ Credentials Missing: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY not found.";
 
 let clientInstance: any = null;
 
 if (isSupabaseConfigured) {
   try {
+    // NOTE: We do NOT send custom headers here, as they cause CORS preflight failures in embedded iframes.
     clientInstance = createClient(supabaseUrl!, supabaseAnonKey!, {
-      auth: { persistSession: true, autoRefreshToken: true },
-      global: { headers: { 'x-application-name': 'distillery-events' } }
+      auth: { persistSession: true, autoRefreshToken: true }
     });
     console.info("⚡ DistilleryEvents: Cloud Link Initialized.");
   } catch (e) {
@@ -68,7 +65,6 @@ export const configValues = {
   key: supabaseAnonKey
 };
 
-// Robust mock client to prevent hard crashes in local mode
 export const supabase = clientInstance || {
   auth: { 
     getSession: async () => ({ data: { session: null }, error: null }), 
@@ -79,14 +75,15 @@ export const supabase = clientInstance || {
   },
   from: (table: string) => ({
     select: () => ({ 
-      order: () => Promise.resolve({ data: [], error: { message: `Disconnected: Table "${table}" not reachable.` } }),
+      order: () => Promise.resolve({ data: [], error: { message: MISSING_VARS_ERROR } }),
       eq: () => ({ 
         order: () => Promise.resolve({ data: [], error: null }),
         select: () => Promise.resolve({ data: [], error: null })
       })
     }),
-    upsert: () => ({ select: () => Promise.resolve({ data: null, error: { message: MISSING_VARS_ERROR } }) }),
+    upsert: () => Promise.resolve({ data: null, error: { message: MISSING_VARS_ERROR } }),
     insert: () => Promise.resolve({ data: null, error: { message: MISSING_VARS_ERROR } }),
+    update: () => ({ eq: () => Promise.resolve({ data: null, error: { message: MISSING_VARS_ERROR } }) }),
     delete: () => ({ eq: () => Promise.resolve({ data: [], error: null }) })
   })
 } as any;

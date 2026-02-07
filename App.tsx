@@ -113,8 +113,14 @@ const AppContent: React.FC = () => {
     try {
       if (!isSupabaseConfigured) throw new Error(MISSING_VARS_ERROR);
       
-      const { error } = await supabase.from('events').upsert(event);
-      if (error) throw error;
+      const isNew = !events.some(e => e.id === event.id);
+      
+      // Separate insert/update for maximum compatibility with RLS/CORS settings
+      const result = isNew 
+        ? await supabase.from('events').insert(event)
+        : await supabase.from('events').update(event).eq('id', event.id);
+
+      if (result.error) throw result.error;
       
       setEvents(prev => {
         const exists = prev.some(e => e.id === event.id);
@@ -124,10 +130,9 @@ const AppContent: React.FC = () => {
       setEditingEvent(undefined);
     } catch (err: any) {
       console.error("Save failure:", err);
-      const urlPreview = configValues.url ? `${configValues.url.substring(0, 15)}...` : 'MISSING';
       
-      if (err.message?.includes('Failed to fetch')) {
-        alert(`NETWORK ERROR: Unable to reach the database.\n\nDiagnostic Info:\n- Supabase URL: ${urlPreview}\n- Status: ${isSupabaseConfigured ? 'Configured' : 'Missing Variables'}\n\nCommon Fixes:\n1. Ensure VITE_SUPABASE_URL and KEY are correctly set in Vercel.\n2. Ensure table 'events' exists in Supabase.\n3. Verify your internet connection.`);
+      if (err.message?.includes('Failed to fetch') || err.name === 'TypeError') {
+        alert(`NETWORK ERROR: The request was blocked.\n\nLikely Causes:\n1. IFRAME BLOCK: If this is embedded, your browser might be blocking cross-origin requests.\n2. MISSING TABLE: Does the table 'events' exist in your Supabase project?\n3. WRONG URL: Is your URL exactly 'https://[ref].supabase.co'?\n4. RLS: Do you have an "INSERT" policy for anonymous users?\n\nCheck the browser console for details.`);
       } else {
         alert("Database Error: " + err.message);
       }
