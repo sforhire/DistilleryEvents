@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
+import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo, Component } from 'react';
 import { EventRecord } from './types';
 import EventForm from './components/EventForm';
 import DashboardStats from './components/DashboardStats';
@@ -7,39 +7,25 @@ import EventSheet from './components/EventSheet';
 import MonthlyRevenueChart from './components/MonthlyRevenueChart';
 import PublicEventForm from './components/PublicEventForm';
 import EmbedModal from './components/EmbedModal';
-import { supabase, isSupabaseConfigured, MISSING_VARS_ERROR } from './services/supabaseClient';
+import { supabase, isSupabaseConfigured, MISSING_VARS_ERROR, configValues } from './services/supabaseClient';
 import { formatTimeWindow } from './services/utils';
 import { pushEventToCalendar } from './services/calendarService';
 
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-/**
- * Robust Error Boundary to catch render-time failures.
- * Fixed: Explicitly extends React.Component to ensure 'props' is accessible in TypeScript.
- */
+// Use React.Component explicitly to resolve property resolution issues for 'props' in some environments
 class ErrorBoundary extends React.Component<EBProps, EBState> {
   public state: EBState = { hasError: false, error: null };
-
-  constructor(props: EBProps) {
-    super(props);
-  }
-
-  static getDerivedStateFromError(error: Error): EBState {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Pipeline Runtime Error:", error, errorInfo);
-  }
-
+  static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
   render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center p-12">
           <div className="max-w-xl w-full text-center">
             <h1 className="text-3xl font-black text-red-600 uppercase mb-4">Pipeline Halted</h1>
-            <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 text-left overflow-auto max-h-64 shadow-2xl">
+            <div className="bg-gray-900 p-6 rounded-2xl text-[12px] font-mono text-amber-400 mb-8 text-left overflow-auto max-h-64 shadow-2xl leading-relaxed">
               {this.state.error?.message || "Render Context Failure"}
             </div>
             <button onClick={() => window.location.reload()} className="bg-black text-white px-8 py-4 rounded-xl font-bold uppercase text-xs hover:bg-amber-700 transition-colors">Reboot System</button>
@@ -47,74 +33,53 @@ class ErrorBoundary extends React.Component<EBProps, EBState> {
         </div>
       );
     }
-    // Correctly accessing children from this.props
     return this.props.children;
   }
 }
 
-/**
- * Calendar Sync Interaction Component
- */
+const PrintPreviewModal: React.FC<{ event: EventRecord; onClose: () => void }> = ({ event, onClose }) => {
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 no-print">
+      <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative shadow-2xl">
+        <div className="sticky top-0 right-0 p-6 flex justify-between items-center bg-white/95 backdrop-blur-sm border-b z-10">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">Print Manifest Preview</h3>
+            <p className="text-sm font-bold text-gray-900 uppercase tracking-tighter">{event.firstName} {event.lastName} — {event.eventType}</p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => window.print()} className="bg-black text-white px-6 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-amber-700 transition-all shadow-lg active:scale-95">Print Document</button>
+            <button onClick={onClose} className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center text-2xl transition-colors">&times;</button>
+          </div>
+        </div>
+        <div className="p-8"><EventSheet event={event} /></div>
+      </div>
+    </div>
+  );
+};
+
 const CalendarSyncButton: React.FC<{ event: EventRecord; onUpdate: (e: EventRecord) => void }> = ({ event, onUpdate }) => {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>(event.pushedToCalendar ? 'success' : 'idle');
-
   const handleSync = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (status === 'loading' || status === 'success') return;
-    
     setStatus('loading');
     const result = await pushEventToCalendar(event);
-    
     if (result.success) {
       setStatus('success');
-      onUpdate({
-        ...event,
-        pushedToCalendar: true,
-        calendarPushedAt: new Date().toISOString(),
-        googleEventId: result.googleEventId
-      });
+      onUpdate({ ...event, pushedToCalendar: true, calendarPushedAt: new Date().toISOString(), googleEventId: result.googleEventId });
     } else {
       setStatus('error');
       setTimeout(() => setStatus('idle'), 3000);
     }
   };
-
   return (
-    <button 
-      onClick={handleSync}
-      title={status === 'success' ? `Synced on ${new Date(event.calendarPushedAt!).toLocaleDateString()}` : "Sync to G-Cal"}
-      className={`p-2.5 rounded-lg transition-all shadow-sm active:scale-95 flex items-center justify-center ${
-        status === 'success' ? 'bg-green-100 text-green-700' : 
-        status === 'error' ? 'bg-red-100 text-red-600' :
-        'bg-gray-100 text-gray-500 hover:bg-amber-100 hover:text-amber-700'
-      }`}
-    >
-      {status === 'loading' ? (
-        <div className="w-5 h-5 border-2 border-amber-600/20 border-t-amber-600 rounded-full animate-spin"></div>
-      ) : status === 'success' ? (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
-      ) : status === 'error' ? (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-      ) : (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-      )}
+    <button onClick={handleSync} className={`p-2.5 rounded-lg transition-all shadow-sm active:scale-95 flex items-center justify-center ${status === 'success' ? 'bg-green-100 text-green-700' : status === 'error' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500 hover:bg-amber-100 hover:text-amber-700'}`}>
+      {status === 'loading' ? <div className="w-5 h-5 border-2 border-amber-600/20 border-t-amber-600 rounded-full animate-spin"></div> : 
+       status === 'success' ? <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg> :
+       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
     </button>
   );
 };
-
-const PrintPreviewModal: React.FC<{ event: EventRecord; onClose: () => void }> = ({ event, onClose }) => (
-  <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 no-print">
-    <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative shadow-2xl">
-      <div className="sticky top-0 right-0 p-6 flex justify-end z-10 bg-white/80 backdrop-blur-md border-b">
-        <div className="flex gap-4">
-          <button onClick={() => window.print()} className="bg-amber-600 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] shadow-lg hover:bg-amber-500">Print Manifest</button>
-          <button onClick={onClose} className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-2xl">&times;</button>
-        </div>
-      </div>
-      <EventSheet event={event} />
-    </div>
-  </div>
-);
 
 const AppContent: React.FC = () => {
   const isPublicView = new URLSearchParams(window.location.search).get('view') === 'public';
@@ -130,14 +95,12 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const hydratePipeline = async () => {
       if (!isSupabaseConfigured) { setLoading(false); return; }
-      setLoading(true);
       try {
         const { data, error } = await supabase.from('events').select('*').order('dateRequested', { ascending: true });
         if (error) throw error;
         setEvents(data || []);
       } catch (err: any) {
         console.error("❌ Cloud fetch failed:", err.message);
-        setEvents([]);
       } finally { setLoading(false); }
     };
     hydratePipeline();
@@ -151,11 +114,13 @@ const AppContent: React.FC = () => {
     try {
       if (!isSupabaseConfigured) throw new Error(MISSING_VARS_ERROR);
       
+      /**
+       * RESILIENT UPSERT
+       * Performs a simple insert for new IDs to maximize compatibility with basic RLS policies.
+       */
       const { error } = await supabase.from('events').upsert(event);
       
-      if (error) {
-        throw new Error(`Database Error: ${error.message}`);
-      }
+      if (error) throw new Error(error.message);
       
       setEvents(prev => {
         const exists = prev.some(e => e.id === event.id);
@@ -164,27 +129,33 @@ const AppContent: React.FC = () => {
       setShowForm(false);
       setEditingEvent(undefined);
     } catch (err: any) {
-      console.error("Save failure:", err);
-      let friendlyMessage = err.message;
-      if (err.message?.includes('Failed to fetch')) {
-        friendlyMessage = "Network Connection Error: Unable to reach the server. Please check your internet connection or verify your Supabase URL/CORS settings.";
+      console.error("❌ Operational Save Failure:", err);
+      
+      // Technical Diagnostics
+      const diag = `\n\n--- Diagnostic Report ---\nURL Check: ${configValues.url ? 'Present' : 'MISSING'}\nError Type: ${err.name || 'Unknown'}\nDetails: ${err.message}`;
+      
+      if (err.message?.includes('Failed to fetch') || err.name === 'TypeError') {
+        alert("CRITICAL CONNECTION ERROR: The browser cannot reach your Supabase database." + 
+              "\n\nSTEPS TO FIX:" +
+              "\n1. Go to Vercel Settings > Environment Variables." +
+              "\n2. Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are correct (no spaces/quotes)." +
+              "\n3. Ensure you have a table named 'events' in Supabase." +
+              "\n4. Check if a VPN/Firewall is blocking the connection." + diag);
+      } else {
+        alert("Action Required: " + err.message + diag);
       }
-      alert(friendlyMessage);
-      // Rethrow so the caller (like PublicEventForm) knows it failed
       throw err;
     }
   };
 
   const handleDeleteEvent = async (id: string) => {
-    if (!window.confirm("Confirm permanent removal from cloud store?")) return;
+    if (!window.confirm("Confirm permanent removal?")) return;
     try {
       const { error } = await supabase.from('events').delete().eq('id', id);
       if (error) throw error;
       setEvents(prev => prev.filter(e => e.id !== id));
       setShowForm(false);
-      setEditingEvent(undefined);
     } catch (err: any) {
-      console.error("Delete failure:", err);
       alert("Removal failed. Check your connection.");
     }
   };
@@ -210,15 +181,15 @@ const AppContent: React.FC = () => {
   if (loading) return (
     <div className="h-screen bg-[#faf9f6] flex flex-col items-center justify-center space-y-4">
       <div className="w-12 h-12 border-[6px] border-amber-700/20 border-t-amber-700 rounded-full animate-spin"></div>
-      <p className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-900/60">Synchronizing Manifest</p>
+      <p className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-900/60 text-center px-6">Synchronizing Pipeline Manifest</p>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-[#faf9f6]">
       {!isSupabaseConfigured && (
-        <div className="bg-amber-600 text-white p-2 text-center text-[10px] font-black uppercase tracking-widest no-print">
-          Warning: Offline Mode (Env Vars Missing)
+        <div className="bg-amber-600 text-white p-2 text-center text-[10px] font-black uppercase tracking-widest sticky top-0 z-50">
+          Warning: Pipeline Offline (Credentials Missing)
         </div>
       )}
       <div className="no-print">
