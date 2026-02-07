@@ -4,11 +4,11 @@ import { getEnv } from './utils';
 
 /**
  * Robust Supabase Configuration
- * Cleans environment variables to prevent common 'Failed to fetch' errors.
+ * Aggressively scrubs variables to prevent 'Failed to fetch' errors in Vercel/Vite.
  */
 
 const fetchConfig = () => {
-  // 1. Check for Vite-specific build-time variables
+  // 1. Try Vite-specific build-time variables
   let viteUrl: string | undefined;
   let viteKey: string | undefined;
   
@@ -19,26 +19,24 @@ const fetchConfig = () => {
     viteKey = import.meta.env?.VITE_SUPABASE_ANON_KEY;
   } catch (e) {}
 
-  // 2. Fallback to utility (checks process.env, globals, window.env)
+  // 2. Fallback to global/process lookup
   let url = viteUrl || getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL');
   let key = viteKey || getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
 
   /**
-   * AGGRESSIVE CLEANING
-   * Removes hidden newlines, trailing spaces, quotes, and trailing slashes.
+   * SCRUBBING LOGIC
+   * Removes quotes, spaces, and trailing slashes that break fetch requests.
    */
-  const clean = (val: any) => {
+  const scrub = (val: any): string | undefined => {
     if (typeof val !== 'string') return undefined;
-    return val
-      .trim()                           // Remove spaces/newlines
-      .replace(/^["']|["']$/g, '')      // Remove surrounding quotes
-      .replace(/\/$/, '');              // Remove trailing slash
+    const cleaned = val.trim().replace(/^["']|["']$/g, '').replace(/\/$/, '');
+    return cleaned === '' || cleaned === 'undefined' ? undefined : cleaned;
   };
 
-  url = clean(url);
-  key = clean(key);
-
-  return { url, key };
+  return { 
+    url: scrub(url), 
+    key: scrub(key) 
+  };
 };
 
 const { url: supabaseUrl, key: supabaseAnonKey } = fetchConfig();
@@ -49,18 +47,17 @@ export const isSupabaseConfigured = !!(
   supabaseUrl.startsWith('http')
 );
 
-export const MISSING_VARS_ERROR = "⚠️ Credentials Missing: Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel Settings.";
+export const MISSING_VARS_ERROR = "⚠️ Supabase Credentials Error: Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel/Local environment settings.";
 
 let clientInstance: any = null;
 
 if (isSupabaseConfigured) {
   try {
-    // Initialize the real client
     clientInstance = createClient(supabaseUrl!, supabaseAnonKey!, {
-      auth: { persistSession: true },
+      auth: { persistSession: true, autoRefreshToken: true },
       global: { headers: { 'x-application-name': 'distillery-events' } }
     });
-    console.info("⚡ DistilleryEvents: Cloud Link Active.");
+    console.info("⚡ DistilleryEvents: Cloud Link Initialized.");
   } catch (e) {
     console.error("Supabase Initialization Failed:", e);
   }
@@ -71,7 +68,7 @@ export const configValues = {
   key: supabaseAnonKey
 };
 
-// Robust mock client for local-first fallback
+// Robust mock client to prevent hard crashes in local mode
 export const supabase = clientInstance || {
   auth: { 
     getSession: async () => ({ data: { session: null }, error: null }), 
@@ -82,14 +79,14 @@ export const supabase = clientInstance || {
   },
   from: (table: string) => ({
     select: () => ({ 
-      order: () => Promise.resolve({ data: [], error: { message: "System running in limited local mode." } }),
+      order: () => Promise.resolve({ data: [], error: { message: `Disconnected: Table "${table}" not reachable.` } }),
       eq: () => ({ 
         order: () => Promise.resolve({ data: [], error: null }),
         select: () => Promise.resolve({ data: [], error: null })
       })
     }),
-    upsert: () => ({ select: () => Promise.resolve({ data: null, error: { message: "Cloud connection not established." } }) }),
-    insert: () => Promise.resolve({ data: null, error: { message: "Cloud connection not established." } }),
+    upsert: () => ({ select: () => Promise.resolve({ data: null, error: { message: MISSING_VARS_ERROR } }) }),
+    insert: () => Promise.resolve({ data: null, error: { message: MISSING_VARS_ERROR } }),
     delete: () => ({ eq: () => Promise.resolve({ data: [], error: null }) })
   })
 } as any;

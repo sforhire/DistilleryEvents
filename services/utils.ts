@@ -1,24 +1,33 @@
 
 /**
  * Safely retrieves environment variables across different browser/node environments.
+ * Specifically handles platform-injected globals like window.env or process.env shims.
  */
 export const getEnv = (key: string): string | undefined => {
   try {
+    // 1. Check direct process.env (Vercel/Node shim)
     if (typeof process !== 'undefined' && process.env && process.env[key]) {
       return process.env[key];
     }
+    
+    // 2. Check window/globalThis shims
     const win = (typeof window !== 'undefined' ? window : globalThis) as any;
+    
     if (win.process?.env?.[key]) return win.process.env[key];
     if (win.env?.[key]) return win.env[key];
     if (win.ENV?.[key]) return win.ENV[key];
     if (win[key]) return win[key];
+    
+    // 3. Fallback to Vite meta (redundant but safe)
+    // @ts-ignore
+    if (import.meta.env?.[key]) return import.meta.env[key];
+
   } catch (e) {}
   return undefined;
 };
 
 /**
  * Combines a date (YYYY-MM-DD) and time (HH:MM) into a full ISO string.
- * Defaults to current timezone.
  */
 export const combineDateTimeToISO = (dateStr: string, timeStr: string): string => {
   if (!dateStr || !timeStr) return new Date().toISOString();

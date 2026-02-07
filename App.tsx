@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo, Component } from 'react';
+import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import EventForm from './components/EventForm';
 import DashboardStats from './components/DashboardStats';
@@ -14,7 +14,6 @@ import { pushEventToCalendar } from './services/calendarService';
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
-// Use React.Component explicitly to resolve property resolution issues for 'props' in some environments
 class ErrorBoundary extends React.Component<EBProps, EBState> {
   public state: EBState = { hasError: false, error: null };
   static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
@@ -114,13 +113,8 @@ const AppContent: React.FC = () => {
     try {
       if (!isSupabaseConfigured) throw new Error(MISSING_VARS_ERROR);
       
-      /**
-       * RESILIENT UPSERT
-       * Performs a simple insert for new IDs to maximize compatibility with basic RLS policies.
-       */
       const { error } = await supabase.from('events').upsert(event);
-      
-      if (error) throw new Error(error.message);
+      if (error) throw error;
       
       setEvents(prev => {
         const exists = prev.some(e => e.id === event.id);
@@ -129,20 +123,13 @@ const AppContent: React.FC = () => {
       setShowForm(false);
       setEditingEvent(undefined);
     } catch (err: any) {
-      console.error("❌ Operational Save Failure:", err);
+      console.error("Save failure:", err);
+      const urlPreview = configValues.url ? `${configValues.url.substring(0, 15)}...` : 'MISSING';
       
-      // Technical Diagnostics
-      const diag = `\n\n--- Diagnostic Report ---\nURL Check: ${configValues.url ? 'Present' : 'MISSING'}\nError Type: ${err.name || 'Unknown'}\nDetails: ${err.message}`;
-      
-      if (err.message?.includes('Failed to fetch') || err.name === 'TypeError') {
-        alert("CRITICAL CONNECTION ERROR: The browser cannot reach your Supabase database." + 
-              "\n\nSTEPS TO FIX:" +
-              "\n1. Go to Vercel Settings > Environment Variables." +
-              "\n2. Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are correct (no spaces/quotes)." +
-              "\n3. Ensure you have a table named 'events' in Supabase." +
-              "\n4. Check if a VPN/Firewall is blocking the connection." + diag);
+      if (err.message?.includes('Failed to fetch')) {
+        alert(`NETWORK ERROR: Unable to reach the database.\n\nDiagnostic Info:\n- Supabase URL: ${urlPreview}\n- Status: ${isSupabaseConfigured ? 'Configured' : 'Missing Variables'}\n\nCommon Fixes:\n1. Ensure VITE_SUPABASE_URL and KEY are correctly set in Vercel.\n2. Ensure table 'events' exists in Supabase.\n3. Verify your internet connection.`);
       } else {
-        alert("Action Required: " + err.message + diag);
+        alert("Database Error: " + err.message);
       }
       throw err;
     }
