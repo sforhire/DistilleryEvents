@@ -3,10 +3,11 @@ import { createClient } from '@supabase/supabase-js';
 import { getEnv } from './utils';
 
 /**
- * Total Storage Isolation for Iframe Resilience
- * This prevents the 'SecurityError' / 'Failed to fetch' caused by 
- * browsers blocking storage access in embedded contexts.
+ * TOTAL COMPATIBILITY MODE
+ * Specifically designed for restricted Iframe environments.
  */
+
+// A virtual storage that exists only in RAM to avoid SecurityErrors
 const memoryStorage = {
   getItem: () => null,
   setItem: () => {},
@@ -33,70 +34,44 @@ const fetchConfig = () => {
     return cleaned === '' || cleaned === 'undefined' ? undefined : cleaned;
   };
 
-  return { 
-    url: scrub(url), 
-    key: scrub(key) 
-  };
+  return { url: scrub(url), key: scrub(key) };
 };
 
 const { url: supabaseUrl, key: supabaseAnonKey } = fetchConfig();
 const isValidUrl = supabaseUrl?.startsWith('https://') && supabaseUrl?.includes('.supabase.');
 
 export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey && isValidUrl);
-export const MISSING_VARS_ERROR = !isValidUrl 
-  ? "⚠️ Connection Link Invalid: URL must be https://[ref].supabase.co"
-  : "⚠️ Credentials Missing: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY not detected.";
+export const MISSING_VARS_ERROR = "⚠️ Connection Offline: Verify Supabase URL/Key in Vercel settings.";
 
 let clientInstance: any = null;
 
 if (isSupabaseConfigured) {
   try {
-    /**
-     * IFRAME-SAFE INITIALIZATION:
-     * 1. persistSession: false (No storage)
-     * 2. storage: memoryStorage (Hard-coded no-op storage to prevent SecurityErrors)
-     */
+    // We use the most basic initialization possible to avoid CORS preflight "complex" requests.
     clientInstance = createClient(supabaseUrl!, supabaseAnonKey!, {
-      auth: { 
+      auth: {
         persistSession: false,
+        storage: memoryStorage,
         autoRefreshToken: false,
-        detectSessionInUrl: false,
-        storage: memoryStorage
-      },
-      global: {
-        headers: {} // Keep it clean to avoid CORS preflight issues
+        detectSessionInUrl: false
       }
     });
-    console.info("⚡ DistilleryEvents: Stateless Cloud Link Established.");
   } catch (e) {
-    console.error("Supabase Initialization Failed:", e);
+    console.error("Supabase Init Error:", e);
   }
 }
 
-export const configValues = {
-  url: supabaseUrl,
-  key: supabaseAnonKey
-};
+export const configValues = { url: supabaseUrl, key: supabaseAnonKey };
 
 export const supabase = clientInstance || {
   auth: { 
-    getSession: async () => ({ data: { session: null }, error: null }), 
-    onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-    signInWithPassword: async () => ({ data: { session: null }, error: { message: MISSING_VARS_ERROR } }),
-    signOut: async () => ({ error: null }),
-    getUser: async () => ({ data: { user: null }, error: null })
+    getSession: async () => ({ data: { session: null }, error: null }),
+    signInWithPassword: async () => ({ error: { message: "System Unconfigured" } })
   },
   from: (table: string) => ({
-    select: () => ({ 
-      order: () => Promise.resolve({ data: [], error: { message: MISSING_VARS_ERROR } }),
-      eq: () => ({ 
-        order: () => Promise.resolve({ data: [], error: null }),
-        select: () => Promise.resolve({ data: [], error: null })
-      })
-    }),
-    upsert: () => Promise.resolve({ data: null, error: { message: MISSING_VARS_ERROR } }),
-    insert: () => Promise.resolve({ data: null, error: { message: MISSING_VARS_ERROR } }),
-    update: () => ({ eq: () => Promise.resolve({ data: null, error: { message: MISSING_VARS_ERROR } }) }),
-    delete: () => ({ eq: () => Promise.resolve({ data: [], error: null }) })
+    select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }),
+    insert: () => Promise.resolve({ error: { message: "System Unconfigured" } }),
+    update: () => ({ eq: () => Promise.resolve({ error: { message: "System Unconfigured" } }) }),
+    delete: () => ({ eq: () => Promise.resolve({ error: null }) })
   })
 } as any;

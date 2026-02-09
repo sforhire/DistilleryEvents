@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, ReactNode, ErrorInfo } from 'react';
 import { EventRecord } from './types';
 import EventForm from './components/EventForm';
@@ -7,17 +6,29 @@ import EventSheet from './components/EventSheet';
 import MonthlyRevenueChart from './components/MonthlyRevenueChart';
 import PublicEventForm from './components/PublicEventForm';
 import EmbedModal from './components/EmbedModal';
-import { supabase, isSupabaseConfigured, MISSING_VARS_ERROR, configValues } from './services/supabaseClient';
+import { supabase, isSupabaseConfigured, MISSING_VARS_ERROR } from './services/supabaseClient';
 import { formatTimeWindow } from './services/utils';
 import { pushEventToCalendar } from './services/calendarService';
 
 interface EBProps { children?: ReactNode; }
 interface EBState { hasError: boolean; error: Error | null; }
 
+// Fixed ErrorBoundary by adding an explicit constructor and super(props) call.
+// This ensures that the 'props' property from React.Component is correctly initialized and visible to TypeScript.
 class ErrorBoundary extends React.Component<EBProps, EBState> {
-  public state: EBState = { hasError: false, error: null };
-  static getDerivedStateFromError(error: Error): EBState { return { hasError: true, error }; }
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Pipeline Runtime Error:", error, errorInfo); }
+  constructor(props: EBProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): EBState { 
+    return { hasError: true, error }; 
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
+    console.error("Pipeline Runtime Error:", error, errorInfo); 
+  }
+
   render() {
     if (this.state.hasError) {
       return (
@@ -99,7 +110,7 @@ const AppContent: React.FC = () => {
         if (error) throw error;
         setEvents(data || []);
       } catch (err: any) {
-        console.error("❌ Cloud fetch failed:", err.message);
+        console.error("Cloud fetch failed:", err.message);
       } finally { setLoading(false); }
     };
     hydratePipeline();
@@ -115,14 +126,12 @@ const AppContent: React.FC = () => {
       
       const isNew = !events.some(e => e.id === event.id);
       
-      // Clean request: Minimal calls to avoid browser security triggers in iframes
       const { error } = isNew 
         ? await supabase.from('events').insert(event)
         : await supabase.from('events').update(event).eq('id', event.id);
 
       if (error) throw error;
       
-      // Update local state immediately for a smooth UI
       setEvents(prev => {
         const exists = prev.some(e => e.id === event.id);
         return exists ? prev.map(e => e.id === event.id ? event : e) : [...prev, event];
@@ -130,12 +139,12 @@ const AppContent: React.FC = () => {
       setShowForm(false);
       setEditingEvent(undefined);
     } catch (err: any) {
-      console.error("Cloud Transmission Failure:", err);
+      console.error("Save Error:", err);
       
-      if (err.message?.includes('Failed to fetch') || err.name === 'TypeError') {
-        alert(`NETWORK BLOCK DETECTED:\n\nThe request was rejected by your browser's security settings (CORS).\n\nIf this is an iframe embed, please ensure your Supabase 'Site URL' and 'Allowed Origins' (Settings > API) includes this domain.`);
+      if (err.message?.includes('fetch') || err.name === 'TypeError') {
+        alert("🔒 CORS BLOCK DETECTED\n\nTo fix this:\n1. Open Supabase Dashboard.\n2. Go to Settings > API.\n3. Add your Vercel URL to 'Allowed Origins'.\n4. Go to Authentication > Settings.\n5. Add your Vercel URL to 'Additional Redirect URLs'.");
       } else {
-        alert(`Database Rejection: ${err.message}\n(Check if table 'events' exists in your Supabase project)`);
+        alert("Database Error: " + err.message);
       }
       throw err;
     }
@@ -149,7 +158,7 @@ const AppContent: React.FC = () => {
       setEvents(prev => prev.filter(e => e.id !== id));
       setShowForm(false);
     } catch (err: any) {
-      alert("Removal failed. Check your connection.");
+      alert("Removal failed.");
     }
   };
 
@@ -189,7 +198,7 @@ const AppContent: React.FC = () => {
         <header className="bg-[#111111] h-20 flex items-center justify-between px-8 border-b border-amber-900/40 sticky top-0 z-40 shadow-2xl">
           <div className="flex items-center space-x-4">
             <div className="w-10 h-10 bg-amber-700 rounded-full flex items-center justify-center shadow-lg pulse-amber">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 00-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
             </div>
             <div>
               <h1 className="text-xl font-black text-white tracking-tighter uppercase leading-none">Distillery<span className="text-amber-500">Events</span></h1>
